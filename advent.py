@@ -10,6 +10,9 @@ import os
 
 app = Flask(__name__)
 
+# Debugging-Flag
+DEBUG = True
+
 # Initialisierung
 tuerchen_status = {tag: set() for tag in range(1, 25)}  # Speichert, welche Benutzer ein Türchen schon geöffnet haben
 max_preise = 10  # Maximale Anzahl an Preisen
@@ -18,12 +21,14 @@ tuerchen_farben = ["#FFCCCC", "#CCFFCC", "#CCCCFF", "#FFFFCC", "#CCFFFF", "#FFCC
 tuerchen_reihenfolge = random.sample(range(1, 25), 24)  # Zufällige Reihenfolge der Türchen
 
 def anzahl_vergebener_preise():
+    if DEBUG: print("Debug - Überprüfe Anzahl vergebener Preise")
     if os.path.exists("gewinner.txt"):
         with open("gewinner.txt", "r") as file:
             return len(file.readlines())
     return 0
 
 def hat_teilgenommen(benutzername, tag):
+    if DEBUG: print(f"Debug - Überprüfe, ob {benutzername} an Tag {tag} teilgenommen hat")
     if not os.path.exists("teilnehmer.txt"):
         return False
     with open("teilnehmer.txt", "r") as file:
@@ -31,23 +36,30 @@ def hat_teilgenommen(benutzername, tag):
     return f"{benutzername}-{tag}\n" in teilnahmen
 
 def speichere_teilnehmer(benutzername, tag):
+    if DEBUG: print(f"Debug - Speichere Teilnehmer {benutzername} für Tag {tag}")
     with open("teilnehmer.txt", "a") as file:
         file.write(f"{benutzername}-{tag}\n")
 
 def speichere_gewinner(benutzername, tag):
+    if DEBUG: print(f"Debug - Speichere Gewinner {benutzername} für Tag {tag}")
     with open("gewinner.txt", "a") as file:
         file.write(f"{benutzername} - Tag {tag} - OV L11 - 2023\n")
 
 @app.route('/', methods=['GET', 'POST'])
 def startseite():
     username = request.cookies.get('username')
+    if DEBUG: print(f"Debug - Username: {username}")  # Debugging-Ausgabe
+
+    heute = datetime.date.today()  # Entfernen Sie den Kommentar, um das aktuelle Datum zu verwenden
+    if DEBUG: print(f"Debug - Heute: {heute}")  # Debugging-Ausgabe
+
     if request.method == 'POST' and not username:
         username = request.form['username']
-        resp = make_response(render_template_string(HOME_PAGE, username=username, tuerchen=tuerchen_reihenfolge, heute=datetime.date.today(), tuerchen_status=tuerchen_status, tuerchen_farben=tuerchen_farben))
+        resp = make_response(render_template_string(HOME_PAGE, username=username, tuerchen=tuerchen_reihenfolge, heute=heute, tuerchen_status=tuerchen_status, tuerchen_farben=tuerchen_farben))
         resp.set_cookie('username', username)
         return resp
     else:
-        return render_template_string(HOME_PAGE, username=username, tuerchen=tuerchen_reihenfolge, heute=datetime.date.today(), tuerchen_status=tuerchen_status, tuerchen_farben=tuerchen_farben)
+        return render_template_string(HOME_PAGE, username=username, tuerchen=tuerchen_reihenfolge, heute=heute, tuerchen_status=tuerchen_status, tuerchen_farben=tuerchen_farben)
 
 @app.route('/oeffne_tuerchen/<int:tag>', methods=['GET'])
 def oeffne_tuerchen(tag):
@@ -55,13 +67,13 @@ def oeffne_tuerchen(tag):
     if not benutzername:
         return "Bitte gib zuerst deinen Namen/Rufzeichen auf der Startseite ein."
 
-    heute = datetime.date.today()  # Entfernen Sie den Kommentar, um das aktuelle Datum zu verwenden
-    # heute = datetime.date(2023, 12, 15)  # Simuliert den 15. Dezember 2023 für Testzwecke
-    aktuelle_stunde = datetime.datetime.now().hour
+    heute = datetime.date.today()
+    if DEBUG: print(f"Debug - Heute: {heute}, Öffne Türchen: {tag}")  # Debugging-Ausgabe
+
     if heute.month == 12 and heute.day == tag:
         benutzername = benutzername.upper()
-        
         if hat_teilgenommen(benutzername, tag):
+            if DEBUG: print(f"Debug - {benutzername} hat Türchen {tag} bereits geöffnet.")  # Debugging-Ausgabe
             return "Du hast dieses Türchen heute bereits geöffnet!"
 
         speichere_teilnehmer(benutzername, tag)
