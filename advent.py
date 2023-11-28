@@ -41,11 +41,11 @@ def startseite():
     username = request.cookies.get('username')
     if request.method == 'POST' and not username:
         username = request.form['username']
-        resp = make_response(render_template_string(HOME_PAGE, username=username, tuerchen=tuerchen_reihenfolge, heute=datetime.date.today(), tuerchen_status=tuerchen_status))
+        resp = make_response(render_template_string(HOME_PAGE, username=username, tuerchen=tuerchen_reihenfolge, heute=datetime.date.today(), tuerchen_status=tuerchen_status, tuerchen_farben=tuerchen_farben))
         resp.set_cookie('username', username)
         return resp
     else:
-        return render_template_string(HOME_PAGE, username=username, tuerchen=tuerchen_reihenfolge, heute=datetime.date.today(), tuerchen_status=tuerchen_status)
+        return render_template_string(HOME_PAGE, username=username, tuerchen=tuerchen_reihenfolge, heute=datetime.date.today(), tuerchen_status=tuerchen_status, tuerchen_farben=tuerchen_farben)
 
 @app.route('/oeffne_tuerchen/<int:tag>', methods=['GET'])
 def oeffne_tuerchen(tag):
