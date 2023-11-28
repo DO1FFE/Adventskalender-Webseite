@@ -53,7 +53,8 @@ def oeffne_tuerchen(tag):
     if not benutzername:
         return "Bitte gib zuerst deinen Benutzernamen auf der Startseite ein."
 
-    heute = datetime.date.today()
+    # heute = datetime.date.today()
+    heute = datetime.date(2023, 12, 1)  # Simuliert den 1. Dezember 2023
     aktuelle_stunde = datetime.datetime.now().hour
     if heute.month == 12 and heute.day == tag:
         benutzername = benutzername.upper()
@@ -92,7 +93,7 @@ def download_qr(filename):
 
 HOME_PAGE = '''
 <!doctype html>
-<html lang="en">
+<html lang="de">
   <head>
     <title>Adventskalender</title>
     <style>
