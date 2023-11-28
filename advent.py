@@ -55,8 +55,8 @@ def oeffne_tuerchen(tag):
     if not benutzername:
         return "Bitte gib zuerst deinen Namen/Rufzeichen auf der Startseite ein."
 
-    # heute = datetime.date.today()  # Entfernen Sie den Kommentar, um das aktuelle Datum zu verwenden
-    heute = datetime.date(2023, 12, 20)  # Simuliert den 5. Dezember 2023 für Testzwecke
+    heute = datetime.date.today()  # Entfernen Sie den Kommentar, um das aktuelle Datum zu verwenden
+    # heute = datetime.date(2023, 12, 15)  # Simuliert den 15. Dezember 2023 für Testzwecke
     aktuelle_stunde = datetime.datetime.now().hour
     if heute.month == 12 and heute.day == tag:
         benutzername = benutzername.upper()
