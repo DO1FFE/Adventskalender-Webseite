@@ -139,4 +139,4 @@ HOME_PAGE = '''
 if __name__ == '__main__':
     if not os.path.exists('qr_codes'):
         os.makedirs('qr_codes')
-    app.run(debug=True, port=8087)
+    app.run(host='0.0.0.0', debug=True, port=8087)
