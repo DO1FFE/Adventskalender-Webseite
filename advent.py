@@ -24,6 +24,8 @@ def anzahl_vergebener_preise():
     return 0
 
 def hat_teilgenommen(benutzername, tag):
+    if not os.path.exists("teilnehmer.txt"):
+        return False
     with open("teilnehmer.txt", "r") as file:
         teilnahmen = file.readlines()
     return f"{benutzername}-{tag}\n" in teilnahmen
@@ -54,7 +56,7 @@ def oeffne_tuerchen(tag):
         return "Bitte gib zuerst deinen Benutzernamen auf der Startseite ein."
 
     # heute = datetime.date.today()
-    heute = datetime.date(2023, 12, 1)  # Simuliert den 1. Dezember 2023
+    heute = datetime.date(2023, 12, 5)  # Simuliert den 5. Dezember 2023
     aktuelle_stunde = datetime.datetime.now().hour
     if heute.month == 12 and heute.day == tag:
         benutzername = benutzername.upper()
