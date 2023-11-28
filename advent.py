@@ -10,8 +10,8 @@ import os
 
 app = Flask(__name__)
 
-# Debugging-Flag
-DEBUG = True
+# Debugging-Flag (True/False)
+DEBUG = False
 
 # Initialisierung
 tuerchen_status = {tag: set() for tag in range(1, 25)}  # Speichert, welche Benutzer ein Türchen schon geöffnet haben
@@ -50,7 +50,7 @@ def startseite():
     username = request.cookies.get('username')
     if DEBUG: print(f"Debug - Username: {username}")  # Debugging-Ausgabe
 
-    heute = datetime.date.today()  # Entfernen Sie den Kommentar, um das aktuelle Datum zu verwenden
+    heute = datetime.date.today()
     if DEBUG: print(f"Debug - Heute: {heute}")  # Debugging-Ausgabe
 
     if request.method == 'POST' and not username:
