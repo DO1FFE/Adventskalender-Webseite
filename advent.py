@@ -53,10 +53,10 @@ def startseite():
 def oeffne_tuerchen(tag):
     benutzername = request.cookies.get('username')
     if not benutzername:
-        return "Bitte gib zuerst deinen Benutzernamen auf der Startseite ein."
+        return "Bitte gib zuerst deinen Namen/Rufzeichen auf der Startseite ein."
 
-    # heute = datetime.date.today()
-    heute = datetime.date(2023, 12, 5)  # Simuliert den 5. Dezember 2023
+    # heute = datetime.date.today()  # Entfernen Sie den Kommentar, um das aktuelle Datum zu verwenden
+    heute = datetime.date(2023, 12, 20)  # Simuliert den 5. Dezember 2023 für Testzwecke
     aktuelle_stunde = datetime.datetime.now().hour
     if heute.month == 12 and heute.day == tag:
         benutzername = benutzername.upper()
@@ -114,6 +114,8 @@ HOME_PAGE = '''
       }
       .disabled {
         filter: grayscale(100%);
+        pointer-events: none; /* Deaktiviert Klickereignisse */
+        cursor: default;     /* Setzt den Cursor auf Standard */
       }
     </style>
   </head>
@@ -122,15 +124,15 @@ HOME_PAGE = '''
     <p>Jeden Tag hast du die Chance, ein Freigetränk in unserer Clubstation zu gewinnen. Viel Glück!</p>
     {% if not username %}
       <form method="post">
-        <label for="username">Dein Name:</label>
+        <label for="username">Dein vollständiger Name oder Rufzeichen:</label>
         <input type="text" id="username" name="username">
-        <button type="submit">Name setzen</button>
+        <button type="submit">Name/Rufzeichen setzen</button>
       </form>
     {% else %}
       <p>Willkommen, {{ username }}!</p>
       <div>
         {% for num in tuerchen %}
-          <a href="{% if not tuerchen_status[num] and num <= heute.day %}/oeffne_tuerchen/{{ num }}{% else %}#{% endif %}" class="tuerchen{% if tuerchen_status[num] or num > heute.day %} disabled{% endif %}" style="background-color: {{ tuerchen_farben[num-1] }}">
+          <a href="{% if not tuerchen_status[num] and num == heute.day %}/oeffne_tuerchen/{{ num }}{% else %}#{% endif %}" class="tuerchen{% if num < heute.day %} disabled{% endif %}" style="background-color: {{ tuerchen_farben[num-1] }}">
             {{ num }}
           </a>
         {% endfor %}
