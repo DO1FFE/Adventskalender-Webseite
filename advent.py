@@ -15,6 +15,7 @@ tuerchen_status = {tag: set() for tag in range(1, 25)}  # Speichert, welche Benu
 max_preise = 10  # Maximale Anzahl an Preisen
 gewinn_zeiten = [12, 13, 14, 15, 16, 17, 18, 19, 20, 21]  # Mögliche Uhrzeiten für die Gewinnvergabe
 tuerchen_farben = ["#FFCCCC", "#CCFFCC", "#CCCCFF", "#FFFFCC", "#CCFFFF", "#FFCCFF", "#FFCC99", "#99CCFF", "#FF9999", "#99FF99", "#9999FF", "#FF9966"] * 2  # Farben für die Türchen
+tuerchen_reihenfolge = random.sample(range(1, 25), 24)  # Zufällige Reihenfolge der Türchen
 
 def anzahl_vergebener_preise():
     if os.path.exists("gewinner.txt"):
