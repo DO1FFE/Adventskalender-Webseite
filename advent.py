@@ -2,33 +2,39 @@
 # Adventskalender Programm mit Webserver, Cookie-Unterstützung, farbigen Türchen und QR-Code Download
 # Erstelldatum: 28.11.2023
 
+import logging
 from flask import Flask, request, make_response, render_template_string, send_from_directory
 import datetime
 import random
 import qrcode
 import os
 
+# Logging-Konfiguration
+logging.basicConfig(filename='debug.log', level=logging.DEBUG, 
+                    format='%(asctime)s %(levelname)s: %(message)s',
+                    datefmt='%Y-%m-%d %H:%M:%S')
+
+# Debugging-Flag
+DEBUG = True
+
 app = Flask(__name__)
 
-# Debugging-Flag (True/False)
-DEBUG = False
-
 # Initialisierung
-tuerchen_status = {tag: set() for tag in range(1, 25)}  # Speichert, welche Benutzer ein Türchen schon geöffnet haben
-max_preise = 10  # Maximale Anzahl an Preisen
-gewinn_zeiten = [12, 13, 14, 15, 16, 17, 18, 19, 20, 21]  # Mögliche Uhrzeiten für die Gewinnvergabe
-tuerchen_farben = ["#FFCCCC", "#CCFFCC", "#CCCCFF", "#FFFFCC", "#CCFFFF", "#FFCCFF", "#FFCC99", "#99CCFF", "#FF9999", "#99FF99", "#9999FF", "#FF9966"] * 2  # Farben für die Türchen
-tuerchen_reihenfolge = random.sample(range(1, 25), 24)  # Zufällige Reihenfolge der Türchen
+tuerchen_status = {tag: set() for tag in range(1, 25)} 
+max_preise = 10 
+gewinn_zeiten = [12, 13, 14, 15, 16, 17, 18, 19, 20, 21] 
+tuerchen_farben = ["#FFCCCC", "#CCFFCC", "#CCCCFF", "#FFFFCC", "#CCFFFF", "#FFCCFF", "#FFCC99", "#99CCFF", "#FF9999", "#99FF99", "#9999FF", "#FF9966"] * 2 
+tuerchen_reihenfolge = random.sample(range(1, 25), 24)
 
 def anzahl_vergebener_preise():
-    if DEBUG: print("Debug - Überprüfe Anzahl vergebener Preise")
+    if DEBUG: logging.debug("Überprüfe Anzahl vergebener Preise")
     if os.path.exists("gewinner.txt"):
         with open("gewinner.txt", "r") as file:
             return len(file.readlines())
     return 0
 
 def hat_teilgenommen(benutzername, tag):
-    if DEBUG: print(f"Debug - Überprüfe, ob {benutzername} an Tag {tag} teilgenommen hat")
+    if DEBUG: logging.debug(f"Überprüfe, ob {benutzername} an Tag {tag} teilgenommen hat")
     if not os.path.exists("teilnehmer.txt"):
         return False
     with open("teilnehmer.txt", "r") as file:
@@ -36,51 +42,50 @@ def hat_teilgenommen(benutzername, tag):
     return f"{benutzername}-{tag}\n" in teilnahmen
 
 def speichere_teilnehmer(benutzername, tag):
-    if DEBUG: print(f"Debug - Speichere Teilnehmer {benutzername} für Tag {tag}")
+    if DEBUG: logging.debug(f"Speichere Teilnehmer {benutzername} für Tag {tag}")
     with open("teilnehmer.txt", "a") as file:
         file.write(f"{benutzername}-{tag}\n")
 
 def speichere_gewinner(benutzername, tag):
-    if DEBUG: print(f"Debug - Speichere Gewinner {benutzername} für Tag {tag}")
+    if DEBUG: logging.debug(f"Speichere Gewinner {benutzername} für Tag {tag}")
     with open("gewinner.txt", "a") as file:
         file.write(f"{benutzername} - Tag {tag} - OV L11 - 2023\n")
 
 @app.route('/', methods=['GET', 'POST'])
 def startseite():
     username = request.cookies.get('username')
-    if DEBUG: print(f"Debug - Username: {username}")  # Debugging-Ausgabe
+    if DEBUG: logging.debug(f"Startseite aufgerufen - Username: {username}")
 
-    heute = datetime.date.today()
-    if DEBUG: print(f"Debug - Heute: {heute}")  # Debugging-Ausgabe
+    heute = datetime.date.today()  
+    if DEBUG: logging.debug(f"Startseite - Heute: {heute}")
 
     if request.method == 'POST' and not username:
         username = request.form['username']
         resp = make_response(render_template_string(HOME_PAGE, username=username, tuerchen=tuerchen_reihenfolge, heute=heute, tuerchen_status=tuerchen_status, tuerchen_farben=tuerchen_farben))
-        resp.set_cookie('username', username)
+        resp.set_cookie('username', username.upper())
+        if DEBUG: logging.debug(f"Username gesetzt: {username}")
         return resp
     else:
         return render_template_string(HOME_PAGE, username=username, tuerchen=tuerchen_reihenfolge, heute=heute, tuerchen_status=tuerchen_status, tuerchen_farben=tuerchen_farben)
 
 @app.route('/oeffne_tuerchen/<int:tag>', methods=['GET'])
 def oeffne_tuerchen(tag):
-    benutzername = request.cookies.get('username')
-    if not benutzername:
-        return "Bitte gib zuerst deinen Namen/Rufzeichen auf der Startseite ein."
-
+    benutzername = request.cookies.get('username').upper()
     heute = datetime.date.today()
-    if DEBUG: print(f"Debug - Heute: {heute}, Öffne Türchen: {tag}")  # Debugging-Ausgabe
+    if DEBUG: logging.debug(f"Öffne Türchen {tag} aufgerufen - Benutzer: {benutzername}, Datum: {heute}")
 
     if heute.month == 12 and heute.day == tag:
-        benutzername = benutzername.upper()
+        if DEBUG: logging.debug(f"Benutzer {benutzername} versucht, Türchen {tag} zu öffnen")
+
         if hat_teilgenommen(benutzername, tag):
-            if DEBUG: print(f"Debug - {benutzername} hat Türchen {tag} bereits geöffnet.")  # Debugging-Ausgabe
+            if DEBUG: logging.debug(f"{benutzername} hat Türchen {tag} bereits geöffnet")
             return "Du hast dieses Türchen heute bereits geöffnet!"
 
         speichere_teilnehmer(benutzername, tag)
         tuerchen_status[tag].add(benutzername)
 
         vergebene_preise = anzahl_vergebener_preise()
-        if vergebene_preise < max_preise and aktuelle_stunde in gewinn_zeiten and random.choice([True, False]):
+        if vergebene_preise < max_preise and datetime.datetime.now().hour in gewinn_zeiten and random.choice([True, False]):
             speichere_gewinner(benutzername, tag)
             qr = qrcode.QRCode(
                 version=1,
@@ -91,18 +96,21 @@ def oeffne_tuerchen(tag):
             qr.add_data(f"{tag}-{benutzername}-OV L11-2023")
             qr.make(fit=True)
             img = qr.make_image(fill_color="black", back_color="white")
-            qr_filename = f"{benutzername}_{tag}.png"
-            img.save(f"qr_codes/{qr_filename}")
+            qr_filename = f"qr_codes/{benutzername}_{tag}.png"
+            img.save(qr_filename)
+            if DEBUG: logging.debug(f"QR-Code generiert und gespeichert: {qr_filename}")
 
             return f"Glückwunsch! Du hast ein Freigetränk in der Clubstation des OV L11 gewonnen. <a href='/download_qr/{qr_filename}'>Lade deinen QR-Code herunter</a> oder sieh ihn dir <a href='/qr_codes/{qr_filename}'>hier an</a>."
-
-        return "Du hattest heute leider kein Glück, versuche es morgen noch einmal!"
-
+        else:
+            if DEBUG: logging.debug(f"Kein Gewinn für {benutzername} an Tag {tag}")
+            return "Du hattest heute leider kein Glück, versuche es morgen noch einmal!"
     else:
+        if DEBUG: logging.debug(f"Türchen {tag} kann heute noch nicht geöffnet werden")
         return "Dieses Türchen kann heute noch nicht geöffnet werden."
 
 @app.route('/download_qr/<filename>', methods=['GET'])
 def download_qr(filename):
+    if DEBUG: logging.debug(f"Download-Anfrage für QR-Code: {filename}")
     return send_from_directory(directory='qr_codes', filename=filename, as_attachment=True)
 
 HOME_PAGE = '''
