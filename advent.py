@@ -145,7 +145,7 @@ HOME_PAGE = '''
       <div>
         {% for num in tuerchen %}
           <a href="{% if num <= heute.day and not tuerchen_status[num] %}/oeffne_tuerchen/{{ num }}{% else %}#{% endif %}" 
-             class="tuerchen{% if num < heute.day %} disabled{% endif %}" 
+             class="tuerchen{% if num < heute.day and heute.month == 12 %} disabled{% endif %}" 
              style="background-color: {{ tuerchen_farben[num-1] }}">
             {{ num }}
           </a>
