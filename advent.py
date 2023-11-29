@@ -122,7 +122,33 @@ HOME_PAGE = '''
 <!doctype html>
 <html lang="de">
   <head>
-    <!-- Stil- und Layout-Definitionen -->
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Adventskalender</title>
+    <style>
+      body { font-family: Arial, sans-serif; }
+      header, footer { padding: 10px; background-color: #f1f1f1; text-align: center; }
+      nav a { margin-right: 15px; }
+      .tuerchen { 
+        display: inline-block;
+        width: 100px;
+        height: 100px;
+        margin: 10px;
+        text-align: center;
+        vertical-align: middle;
+        line-height: 100px;
+        border-radius: 10px;
+        font-size: 20px;
+        font-weight: bold;
+        color: black;
+        text-decoration: none;
+      }
+      .disabled { 
+        filter: grayscale(100%);
+        pointer-events: none;
+        cursor: default;
+      }
+    </style>
   </head>
   <body>
     <header>
@@ -132,7 +158,22 @@ HOME_PAGE = '''
       </nav>
     </header>
     <h1>Adventskalender des OV L11</h1>
-    <!-- Rest des HTML-Codes für die Hauptseite -->
+    {% if not username %}
+      <form method="post">
+        <label for="username">Dein vollständiger Name oder Rufzeichen:</label>
+        <input type="text" id="username" name="username" required>
+        <button type="submit">Name/Rufzeichen setzen</button>
+      </form>
+    {% else %}
+      <p>Willkommen, {{ username }}!</p>
+      <div>
+        {% for num in tuerchen %}
+          <a href="{% if not tuerchen_status[num] and num <= heute.day %}/oeffne_tuerchen/{{ num }}{% else %}#{% endif %}" class="tuerchen{% if tuerchen_status[num] or num > heute.day %} disabled{% endif %}" style="background-color: {{ tuerchen_farben[num-1] }}">
+            {{ num }}
+          </a>
+        {% endfor %}
+      </div>
+    {% endif %}
     <footer>
       <p>&copy; 2023 Erik Schauer, DO1FFE, do1ffe@darc.de</p>
     </footer>
@@ -144,7 +185,14 @@ GENERIC_PAGE = '''
 <!doctype html>
 <html lang="de">
   <head>
-    <!-- Stil- und Layout-Definitionen -->
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Adventskalender</title>
+    <style>
+      body { font-family: Arial, sans-serif; }
+      header, footer { padding: 10px; background-color: #f1f1f1; text-align: center; }
+      nav a { margin-right: 15px; }
+    </style>
   </head>
   <body>
     <header>
@@ -163,4 +211,6 @@ GENERIC_PAGE = '''
 if __name__ == '__main__':
     if not os.path.exists('qr_codes'):
         os.makedirs('qr_codes')
-    app.run(host='0.0.0.0', debug=True, port=8087)
+
+    if DEBUG: logging.debug("Starte Flask-App")
+    app.run(host='0.0.0.0', port=8087, debug=DEBUG)
