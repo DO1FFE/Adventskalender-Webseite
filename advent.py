@@ -59,27 +59,31 @@ def startseite():
     heute = datetime.date.today()  
     if DEBUG: logging.debug(f"Startseite - Heute: {heute}")
 
+    verbleibende_preise = max_preise - anzahl_vergebener_preise()
+
     if request.method == 'POST' and not username:
-        username = request.form['username']
-        resp = make_response(render_template_string(HOME_PAGE, username=username, tuerchen=tuerchen_reihenfolge, heute=heute, tuerchen_status=tuerchen_status, tuerchen_farben=tuerchen_farben))
-        resp.set_cookie('username', username.upper())
-        if DEBUG: logging.debug(f"Username gesetzt: {username}")
+        username = request.form['username'].upper()
+        resp = make_response(render_template_string(HOME_PAGE, username=username, tuerchen=tuerchen_reihenfolge, heute=heute, tuerchen_status=tuerchen_status, tuerchen_farben=tuerchen_farben, verbleibende_preise=verbleibende_preise))
+        resp.set_cookie('username', username)
         return resp
     else:
-        return render_template_string(HOME_PAGE, username=username, tuerchen=tuerchen_reihenfolge, heute=heute, tuerchen_status=tuerchen_status, tuerchen_farben=tuerchen_farben)
+        return render_template_string(HOME_PAGE, username=username, tuerchen=tuerchen_reihenfolge, heute=heute, tuerchen_status=tuerchen_status, tuerchen_farben=tuerchen_farben, verbleibende_preise=verbleibende_preise)
 
 @app.route('/oeffne_tuerchen/<int:tag>', methods=['GET'])
 def oeffne_tuerchen(tag):
-    benutzername = request.cookies.get('username').upper()
+    benutzername = request.cookies.get('username')
+    if not benutzername:
+        return make_response(render_template_string(GENERIC_PAGE, content="Bitte gib zuerst deinen Namen/Rufzeichen auf der Startseite ein."))
+
     heute = datetime.date.today()
     if DEBUG: logging.debug(f"Öffne Türchen {tag} aufgerufen - Benutzer: {benutzername}, Datum: {heute}")
 
     if heute.month == 12 and heute.day == tag:
-        if DEBUG: logging.debug(f"Benutzer {benutzername} versucht, Türchen {tag} zu öffnen")
-
+        benutzername = benutzername.upper()
+        
         if hat_teilgenommen(benutzername, tag):
             if DEBUG: logging.debug(f"{benutzername} hat Türchen {tag} bereits geöffnet")
-            return "Du hast dieses Türchen heute bereits geöffnet!"
+            return make_response(render_template_string(GENERIC_PAGE, content="Du hast dieses Türchen heute bereits geöffnet!"))
 
         speichere_teilnehmer(benutzername, tag)
         tuerchen_status[tag].add(benutzername)
@@ -100,66 +104,58 @@ def oeffne_tuerchen(tag):
             img.save(qr_filename)
             if DEBUG: logging.debug(f"QR-Code generiert und gespeichert: {qr_filename}")
 
-            return f"Glückwunsch! Du hast ein Freigetränk in der Clubstation des OV L11 gewonnen. <a href='/download_qr/{qr_filename}'>Lade deinen QR-Code herunter</a> oder sieh ihn dir <a href='/qr_codes/{qr_filename}'>hier an</a>."
+            return make_response(render_template_string(GENERIC_PAGE, content=f"Glückwunsch! Du hast ein Freigetränk in der Clubstation des OV L11 gewonnen. <a href='/download_qr/{qr_filename}'>Lade deinen QR-Code herunter</a> oder sieh ihn dir <a href='/qr_codes/{qr_filename}'>hier an</a>."))
         else:
             if DEBUG: logging.debug(f"Kein Gewinn für {benutzername} an Tag {tag}")
-            return "Du hattest heute leider kein Glück, versuche es morgen noch einmal!"
+            return make_response(render_template_string(GENERIC_PAGE, content="Du hattest heute leider kein Glück, versuche es morgen noch einmal!"))
     else:
         if DEBUG: logging.debug(f"Türchen {tag} kann heute noch nicht geöffnet werden")
-        return "Dieses Türchen kann heute noch nicht geöffnet werden."
+        return make_response(render_template_string(GENERIC_PAGE, content="Dieses Türchen kann heute noch nicht geöffnet werden."))
 
 @app.route('/download_qr/<filename>', methods=['GET'])
 def download_qr(filename):
     if DEBUG: logging.debug(f"Download-Anfrage für QR-Code: {filename}")
     return send_from_directory(directory='qr_codes', filename=filename, as_attachment=True)
 
+# HTML-Templates mit Header und Footer
 HOME_PAGE = '''
 <!doctype html>
 <html lang="de">
   <head>
-    <title>Adventskalender</title>
-    <style>
-      .tuerchen {
-        display: inline-block;
-        width: 100px;
-        height: 100px;
-        margin: 10px;
-        text-align: center;
-        vertical-align: middle;
-        line-height: 100px;
-        border-radius: 10px;
-        font-size: 20px;
-        font-weight: bold;
-        color: black;
-      }
-      .disabled {
-        filter: grayscale(100%);
-        pointer-events: none; /* Deaktiviert Klickereignisse */
-        cursor: default;     /* Setzt den Cursor auf Standard */
-      }
-    </style>
+    <!-- Stil- und Layout-Definitionen -->
   </head>
   <body>
+    <header>
+      <nav>
+        <a href="/">Zurück zum Adventskalender</a>
+        <div class="preise">Verbleibende Preise: {{ verbleibende_preise }}</div>
+      </nav>
+    </header>
     <h1>Adventskalender des OV L11</h1>
-    <p>Jeden Tag hast du die Chance, ein Freigetränk in unserer Clubstation zu gewinnen. Viel Glück!</p>
-    {% if not username %}
-      <form method="post">
-        <label for="username">Dein vollständiger Name oder Rufzeichen:</label>
-        <input type="text" id="username" name="username">
-        <button type="submit">Name/Rufzeichen setzen</button>
-      </form>
-    {% else %}
-      <p>Willkommen, {{ username }}!</p>
-      <div>
-        {% for num in tuerchen %}
-          <a href="{% if num <= heute.day and heute.month == 12 and not tuerchen_status[num] %}/oeffne_tuerchen/{{ num }}{% else %}#{% endif %}" 
-             class="tuerchen{% if num < heute.day and heute.month == 12 %} disabled{% endif %}" 
-             style="background-color: {{ tuerchen_farben[num-1] }}">
-            {{ num }}
-          </a>
-        {% endfor %}
-      </div>
-    {% endif %}
+    <!-- Rest des HTML-Codes für die Hauptseite -->
+    <footer>
+      <p>&copy; 2023 Erik Schauer, DO1FFE, do1ffe@darc.de</p>
+    </footer>
+  </body>
+</html>
+'''
+
+GENERIC_PAGE = '''
+<!doctype html>
+<html lang="de">
+  <head>
+    <!-- Stil- und Layout-Definitionen -->
+  </head>
+  <body>
+    <header>
+      <nav>
+        <a href="/">Zurück zum Adventskalender</a>
+      </nav>
+    </header>
+    <div>{{ content }}</div>
+    <footer>
+      <p>&copy; 2023 Erik Schauer, DO1FFE, do1ffe@darc.de</p>
+    </footer>
   </body>
 </html>
 '''
