@@ -68,7 +68,6 @@ def startseite():
         return resp
     else:
         return render_template_string(HOME_PAGE, username=username, tuerchen=tuerchen_reihenfolge, heute=heute, tuerchen_status=tuerchen_status, tuerchen_farben=tuerchen_farben, verbleibende_preise=verbleibende_preise)
-
 @app.route('/oeffne_tuerchen/<int:tag>', methods=['GET'])
 def oeffne_tuerchen(tag):
     benutzername = request.cookies.get('username')
@@ -158,6 +157,7 @@ HOME_PAGE = '''
       </nav>
     </header>
     <h1>Adventskalender des OV L11</h1>
+    <p>Jeden Tag hast du die Chance auf ein Freigetränk in unserer Clubstation. Viel Glück!</p>
     {% if not username %}
       <form method="post">
         <label for="username">Dein vollständiger Name oder Rufzeichen:</label>
