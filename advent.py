@@ -77,11 +77,11 @@ def startseite():
 
     if request.method == 'POST' and not username:
         username = request.form['username'].upper()
-        resp = make_response(render_template_string(HOME_PAGE, username=username, tuerchen=tuerchen_reihenfolge, heute=heute, tuerchen_status=tuerchen_status, tuerchen_farben=tuerchen_farben, verbleibende_preise=verbleibende_preise))
+        resp = make_response(render_template_string(HOME_PAGE, username=username, tuerchen=tuerchen_reihenfolge, heute=heute, tuerchen_status=tuerchen_status, tuerchen_farben=tuerchen_farben, verbleibende_preise=verbleibende_preise, max_preise=max_preise))
         resp.set_cookie('username', username)
         return resp
     else:
-        return render_template_string(HOME_PAGE, username=username, tuerchen=tuerchen_reihenfolge, heute=heute, tuerchen_status=tuerchen_status, tuerchen_farben=tuerchen_farben, verbleibende_preise=verbleibende_preise)
+        return render_template_string(HOME_PAGE, username=username, tuerchen=tuerchen_reihenfolge, heute=heute, tuerchen_status=tuerchen_status, tuerchen_farben=tuerchen_farben, verbleibende_preise=verbleibende_preise, max_preise=max_preise)
 
 @app.route('/oeffne_tuerchen/<int:tag>', methods=['GET'])
 def oeffne_tuerchen(tag):
