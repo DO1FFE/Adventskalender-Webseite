@@ -61,6 +61,11 @@ def startseite():
 
     verbleibende_preise = max_preise - anzahl_vergebener_preise()
 
+    # Aktualisiere tuerchen_status basierend auf Teilnehmerdaten
+    for tag in range(1, 25):
+        if hat_teilgenommen(username, tag):
+            tuerchen_status[tag].add(username)
+
     if request.method == 'POST' and not username:
         username = request.form['username'].upper()
         resp = make_response(render_template_string(HOME_PAGE, username=username, tuerchen=tuerchen_reihenfolge, heute=heute, tuerchen_status=tuerchen_status, tuerchen_farben=tuerchen_farben, verbleibende_preise=verbleibende_preise))
@@ -68,6 +73,7 @@ def startseite():
         return resp
     else:
         return render_template_string(HOME_PAGE, username=username, tuerchen=tuerchen_reihenfolge, heute=heute, tuerchen_status=tuerchen_status, tuerchen_farben=tuerchen_farben, verbleibende_preise=verbleibende_preise)
+
 @app.route('/oeffne_tuerchen/<int:tag>', methods=['GET'])
 def oeffne_tuerchen(tag):
     benutzername = request.cookies.get('username')
