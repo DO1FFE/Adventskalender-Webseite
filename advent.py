@@ -3,11 +3,12 @@
 # Erstelldatum: 28.11.2023
 
 import logging
-from flask import Flask, request, make_response, render_template_string, send_from_directory
 import datetime
 import random
 import qrcode
 import os
+import pytz
+from flask import Flask, request, make_response, render_template_string, send_from_directory
 
 # Logging-Konfiguration
 logging.basicConfig(filename='debug.log', level=logging.DEBUG, 
@@ -17,14 +18,21 @@ logging.basicConfig(filename='debug.log', level=logging.DEBUG,
 # Debugging-Flag
 DEBUG = True
 
+# Lokale Zeitzone festlegen
+local_timezone = pytz.timezone("Europe/Berlin")
+
 app = Flask(__name__)
 
 # Initialisierung
-tuerchen_status = {tag: set() for tag in range(1, 25)} 
-max_preise = 10 
-gewinn_zeiten = [12, 13, 14, 15, 16, 17, 18, 19, 20, 21] 
-tuerchen_farben = ["#FFCCCC", "#CCFFCC", "#CCCCFF", "#FFFFCC", "#CCFFFF", "#FFCCFF", "#FFCC99", "#99CCFF", "#FF9999", "#99FF99", "#9999FF", "#FF9966"] * 2 
+tuerchen_status = {tag: set() for tag in range(1, 25)}
+max_preise = 10
+gewinn_zeiten = [12, 13, 14, 15, 16, 17, 18, 19, 20, 21]
+tuerchen_farben = ["#FFCCCC", "#CCFFCC", "#CCCCFF", "#FFFFCC", "#CCFFFF", "#FFCCFF", "#FFCC99", "#99CCFF", "#FF9999", "#99FF99", "#9999FF", "#FF9966"] * 2
 tuerchen_reihenfolge = random.sample(range(1, 25), 24)
+
+def get_local_datetime():
+    utc_dt = datetime.datetime.now(pytz.utc)  # aktuelle Zeit in UTC
+    return utc_dt.astimezone(local_timezone)  # konvertiere in lokale Zeitzone
 
 def anzahl_vergebener_preise():
     if DEBUG: logging.debug("Überprüfe Anzahl vergebener Preise")
@@ -34,7 +42,6 @@ def anzahl_vergebener_preise():
     return 0
 
 def hat_teilgenommen(benutzername, tag):
-    if DEBUG: logging.debug(f"Überprüfe, ob {benutzername} an Tag {tag} teilgenommen hat")
     if not os.path.exists("teilnehmer.txt"):
         return False
     with open("teilnehmer.txt", "r") as file:
@@ -56,12 +63,11 @@ def startseite():
     username = request.cookies.get('username')
     if DEBUG: logging.debug(f"Startseite aufgerufen - Username: {username}")
 
-    heute = datetime.date.today()  
+    heute = get_local_datetime().date()
     if DEBUG: logging.debug(f"Startseite - Heute: {heute}")
 
     verbleibende_preise = max_preise - anzahl_vergebener_preise()
 
-    # Türchen-Status zurücksetzen und basierend auf Teilnehmerdaten aktualisieren
     tuerchen_status.clear()
     tuerchen_status.update({tag: set() for tag in range(1, 25)})
     if username:
@@ -83,12 +89,12 @@ def oeffne_tuerchen(tag):
     if not benutzername:
         return make_response(render_template_string(GENERIC_PAGE, content="Bitte gib zuerst deinen Namen/Rufzeichen auf der Startseite ein."))
 
-    heute = datetime.date.today()
+    heute = get_local_datetime().date()
     if DEBUG: logging.debug(f"Öffne Türchen {tag} aufgerufen - Benutzer: {benutzername}, Datum: {heute}")
 
     if heute.month == 12 and heute.day == tag:
         benutzername = benutzername.upper()
-        
+
         if hat_teilgenommen(benutzername, tag):
             if DEBUG: logging.debug(f"{benutzername} hat Türchen {tag} bereits geöffnet")
             return make_response(render_template_string(GENERIC_PAGE, content="Du hast dieses Türchen heute bereits geöffnet!"))
@@ -97,7 +103,7 @@ def oeffne_tuerchen(tag):
         tuerchen_status[tag].add(benutzername)
 
         vergebene_preise = anzahl_vergebener_preise()
-        if vergebene_preise < max_preise and datetime.datetime.now().hour in gewinn_zeiten and random.choice([True, False]):
+        if vergebene_preise < max_preise and get_local_datetime().hour in gewinn_zeiten and random.choice([True, False]):
             speichere_gewinner(benutzername, tag)
             qr = qrcode.QRCode(
                 version=1,
