@@ -131,6 +131,10 @@ def download_qr(filename):
     if DEBUG: logging.debug(f"Download-Anfrage für QR-Code: {filename}")
     return send_from_directory(directory='qr_codes', filename=filename, as_attachment=True)
 
+@app.route('/qr_codes/<filename>')
+def qr_code(filename):
+    return send_from_directory('qr_codes', filename)
+
 # HTML-Templates mit Header und Footer
 HOME_PAGE = '''
 <!doctype html>
