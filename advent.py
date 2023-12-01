@@ -242,7 +242,8 @@ ADMIN_PAGE = '''
       body { font-family: Arial, sans-serif; }
       header, footer { padding: 10px; background-color: #f1f1f1; text-align: center; }
       nav a { margin-right: 15px; }
-      .qr-list { list-style-type: none; }
+      .qr-image { margin: 10px; }
+      .qr-filename { text-align: center; }
     </style>
   </head>
   <body>
@@ -252,11 +253,14 @@ ADMIN_PAGE = '''
       </nav>
     </header>
     <h1>QR-Codes</h1>
-    <ul class="qr-list">
+    <div>
       {% for file in qr_files %}
-        <li><a href="/qr_codes/{{ file }}">{{ file }}</a></li>
+        <div class="qr-image">
+          <img src="/qr_codes/{{ file }}" alt="{{ file }}" width="100" height="100">
+          <p class="qr-filename">{{ file }}</p>
+        </div>
       {% endfor %}
-    </ul>
+    </div>
     <footer>
       <p>&copy; 2023 Erik Schauer, DO1FFE, do1ffe@darc.de</p>
     </footer>
