@@ -168,7 +168,7 @@ HOME_PAGE = '''
       <p>Willkommen, {{ username }}!</p>
       <div>
         {% for num in tuerchen %}
-          <a href="{% if not tuerchen_status[num] and num <= heute.day %}/oeffne_tuerchen/{{ num }}{% else %}#{% endif %}" class="tuerchen{% if tuerchen_status[num] or num > heute.day %} disabled{% endif %}" style="background-color: {{ tuerchen_farben[num-1] }}">
+          <a href="{% if not tuerchen_status[num] and num >= heute.day %}/oeffne_tuerchen/{{ num }}{% else %}#{% endif %}" class="tuerchen{% if tuerchen_status[num] or num < heute.day %} disabled{% endif %}" style="background-color: {{ tuerchen_farben[num-1] }}">
             {{ num }}
           </a>
         {% endfor %}
