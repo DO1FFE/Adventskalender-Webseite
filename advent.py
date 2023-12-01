@@ -168,7 +168,7 @@ HOME_PAGE = '''
     <header>
       <nav>
         <a href="/">Zurück zum Adventskalender</a>
-        <div class="preise">Verbleibende Preise: {{ verbleibende_preise }}</div>
+        <div class="preise">Verbleibende Preise: {{ verbleibende_preise }} von {{ max_preise }}</div>
       </nav>
     </header>
     <h1>Adventskalender des OV L11</h1>
