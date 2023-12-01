@@ -61,10 +61,13 @@ def startseite():
 
     verbleibende_preise = max_preise - anzahl_vergebener_preise()
 
-    # Aktualisiere tuerchen_status basierend auf Teilnehmerdaten
-    for tag in range(1, 25):
-        if hat_teilgenommen(username, tag):
-            tuerchen_status[tag].add(username)
+    # Türchen-Status zurücksetzen und basierend auf Teilnehmerdaten aktualisieren
+    tuerchen_status.clear()
+    tuerchen_status.update({tag: set() for tag in range(1, 25)})
+    if username:
+        for tag in range(1, 25):
+            if hat_teilgenommen(username, tag):
+                tuerchen_status[tag].add(username)
 
     if request.method == 'POST' and not username:
         username = request.form['username'].upper()
