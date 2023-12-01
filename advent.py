@@ -232,9 +232,23 @@ GENERIC_PAGE = '''
 def admin_page():
     if DEBUG: logging.debug("Admin-Seite aufgerufen")
     qr_files = os.listdir('qr_codes')
-    return render_template_string(ADMIN_PAGE, qr_files=qr_files)
 
-# HTML-Template für die Admin-Seite
+    # Inhalte der Dateien lesen
+    if os.path.exists('teilnehmer.txt'):
+        with open('teilnehmer.txt', 'r') as file:
+            teilnehmer_inhalt = file.read()
+    else:
+        teilnehmer_inhalt = "Keine Teilnehmerdaten vorhanden."
+
+    if os.path.exists('gewinner.txt'):
+        with open('gewinner.txt', 'r') as file:
+            gewinner_inhalt = file.read()
+    else:
+        gewinner_inhalt = "Keine Gewinnerdaten vorhanden."
+
+    return render_template_string(ADMIN_PAGE, qr_files=qr_files, teilnehmer_inhalt=teilnehmer_inhalt, gewinner_inhalt=gewinner_inhalt)
+
+# HTML-Template für die Admin-Seite aktualisieren
 ADMIN_PAGE = '''
 <!doctype html>
 <html lang="de">
@@ -248,6 +262,9 @@ ADMIN_PAGE = '''
       nav a { margin-right: 15px; }
       .qr-image { margin: 10px; }
       .qr-filename { text-align: center; }
+      .data-section { margin: 20px 0; }
+      .data-title { font-weight: bold; }
+      .data-content { background-color: #f1f1f1; padding: 10px; }
     </style>
   </head>
   <body>
@@ -264,6 +281,14 @@ ADMIN_PAGE = '''
           <p class="qr-filename">{{ file }}</p>
         </div>
       {% endfor %}
+    </div>
+    <div class="data-section">
+      <h2 class="data-title">Teilnehmer</h2>
+      <pre class="data-content">{{ teilnehmer_inhalt }}</pre>
+    </div>
+    <div class="data-section">
+      <h2 class="data-title">Gewinner</h2>
+      <pre class="data-content">{{ gewinner_inhalt }}</pre>
     </div>
     <footer>
       <p>&copy; 2023 Erik Schauer, DO1FFE, do1ffe@darc.de</p>
