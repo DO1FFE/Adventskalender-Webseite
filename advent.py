@@ -223,6 +223,47 @@ GENERIC_PAGE = '''
 </html>
 '''
 
+# Route für die Admin-Seite hinzufügen
+@app.route('/admingeheim', methods=['GET'])
+def admin_page():
+    if DEBUG: logging.debug("Admin-Seite aufgerufen")
+    qr_files = os.listdir('qr_codes')
+    return render_template_string(ADMIN_PAGE, qr_files=qr_files)
+
+# HTML-Template für die Admin-Seite
+ADMIN_PAGE = '''
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin - Adventskalender</title>
+    <style>
+      body { font-family: Arial, sans-serif; }
+      header, footer { padding: 10px; background-color: #f1f1f1; text-align: center; }
+      nav a { margin-right: 15px; }
+      .qr-list { list-style-type: none; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <nav>
+        <a href="/">Zurück zum Adventskalender</a>
+      </nav>
+    </header>
+    <h1>QR-Codes</h1>
+    <ul class="qr-list">
+      {% for file in qr_files %}
+        <li><a href="/qr_codes/{{ file }}">{{ file }}</a></li>
+      {% endfor %}
+    </ul>
+    <footer>
+      <p>&copy; 2023 Erik Schauer, DO1FFE, do1ffe@darc.de</p>
+    </footer>
+  </body>
+</html>
+'''
+
 if __name__ == '__main__':
     if not os.path.exists('qr_codes'):
         os.makedirs('qr_codes')
