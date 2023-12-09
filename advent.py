@@ -28,7 +28,6 @@ tuerchen_status = {tag: set() for tag in range(1, 25)}
 max_preise = 10
 gewinn_zeiten = [12, 13, 14, 15, 16, 17, 18, 19, 20, 21]
 tuerchen_farben = ["#FFCCCC", "#CCFFCC", "#CCCCFF", "#FFFFCC", "#CCFFFF", "#FFCCFF", "#FFCC99", "#99CCFF", "#FF9999", "#99FF99", "#9999FF", "#FF9966"] * 2
-tuerchen_reihenfolge = random.sample(range(1, 25), 24)
 
 def get_local_datetime():
     utc_dt = datetime.datetime.now(pytz.utc)  # aktuelle Zeit in UTC
@@ -85,6 +84,9 @@ def startseite():
         for tag in range(1, 25):
             if hat_teilgenommen(username, tag):
                 tuerchen_status[tag].add(username)
+
+    # Zufällige Reihenfolge der Türchen bei jedem Aufruf
+    tuerchen_reihenfolge = random.sample(range(1, 25), 24)
 
     if request.method == 'POST' and not username:
         username = request.form['username'].upper()
