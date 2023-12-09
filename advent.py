@@ -41,6 +41,17 @@ def anzahl_vergebener_preise():
             return len(file.readlines())
     return 0
 
+def gewinnchance_ermitteln(heutiges_datum, max_preise):
+    # Berechnet die Gewinnchance basierend auf dem aktuellen Datum und der maximalen Anzahl der Preise.
+    verbleibende_tage = 25 - heutiges_datum.day  # Tage bis zum 25. Dezember
+    verbleibende_preise = max_preise - anzahl_vergebener_preise()
+
+    if verbleibende_tage <= 0 or verbleibende_preise <= 0:
+        return 0  # Keine Gewinnchance, wenn keine Preise oder Tage übrig sind
+
+    # Grundlegende Annahme: Die Gewinnchance wird so angepasst, dass täglich ungefähr gleich viele Preise vergeben werden
+    return verbleibende_preise / verbleibende_tage
+
 def hat_teilgenommen(benutzername, tag):
     if not os.path.exists("teilnehmer.txt"):
         return False
@@ -103,7 +114,8 @@ def oeffne_tuerchen(tag):
         tuerchen_status[tag].add(benutzername)
 
         vergebene_preise = anzahl_vergebener_preise()
-        if vergebene_preise < max_preise and get_local_datetime().hour in gewinn_zeiten and random.choice([True, False]):
+        gewinnchance = gewinnchance_ermitteln(heute, max_preise)
+        if vergebene_preise < max_preise and get_local_datetime().hour in gewinn_zeiten and random.random() < gewinnchance:
             speichere_gewinner(benutzername, tag)
             qr = qrcode.QRCode(
                 version=1,
