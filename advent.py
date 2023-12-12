@@ -25,7 +25,7 @@ app = Flask(__name__)
 
 # Initialisierung
 tuerchen_status = {tag: set() for tag in range(1, 25)}
-max_preise = 10
+max_preise = 15
 gewinn_zeiten = [12, 13, 14, 15, 16, 17, 18, 19, 20, 21]
 tuerchen_farben = ["#FFCCCC", "#CCFFCC", "#CCCCFF", "#FFFFCC", "#CCFFFF", "#FFCCFF", "#FFCC99", "#99CCFF", "#FF9999", "#99FF99", "#9999FF", "#FF9966"] * 2
 
@@ -41,15 +41,20 @@ def anzahl_vergebener_preise():
     return 0
 
 def gewinnchance_ermitteln(heutiges_datum, max_preise):
-    # Berechnet die Gewinnchance basierend auf dem aktuellen Datum und der maximalen Anzahl der Preise.
+    """
+    Berechnet die Gewinnchance basierend auf dem aktuellen Datum und der maximalen Anzahl der Preise.
+    Stellt sicher, dass die Preise gleichmäßig über die verbleibenden Tage verteilt werden.
+    """
     verbleibende_tage = 25 - heutiges_datum.day  # Tage bis zum 25. Dezember
-    verbleibende_preise = max_preise - anzahl_vergebener_preise()
+    vergebene_preise = anzahl_vergebener_preise()
+    noch_zu_vergebene_preise = max_preise - vergebene_preise
 
-    if verbleibende_tage <= 0 or verbleibende_preise <= 0:
+    if verbleibende_tage <= 0 or noch_zu_vergebene_preise <= 0:
         return 0  # Keine Gewinnchance, wenn keine Preise oder Tage übrig sind
 
-    # Grundlegende Annahme: Die Gewinnchance wird so angepasst, dass täglich ungefähr gleich viele Preise vergeben werden
-    return verbleibende_preise / verbleibende_tage
+    # Tägliche Gewinnchance basierend auf den noch zu vergebenden Preisen und den verbleibenden Tagen
+    tägliche_gewinnchance = noch_zu_vergebene_preise / verbleibende_tage
+    return tägliche_gewinnchance
 
 def hat_teilgenommen(benutzername, tag):
     if not os.path.exists("teilnehmer.txt"):
