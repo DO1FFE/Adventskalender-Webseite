@@ -40,21 +40,33 @@ def anzahl_vergebener_preise():
             return len(file.readlines())
     return 0
 
-def gewinnchance_ermitteln(heutiges_datum, max_preise):
+def hat_gewonnen(benutzername):
+    """ Überprüft, ob der Benutzer bereits gewonnen hat. """
+    if not os.path.exists("gewinner.txt"):
+        return False
+    with open("gewinner.txt", "r") as file:
+        gewinne = file.readlines()
+    return any(benutzername in gewinn for gewinn in gewinne)
+
+def gewinnchance_ermitteln(benutzername, heutiges_datum, max_preise):
     """
-    Berechnet die Gewinnchance basierend auf dem aktuellen Datum und der maximalen Anzahl der Preise.
-    Stellt sicher, dass die Preise gleichmäßig über die verbleibenden Tage verteilt werden.
+    Berechnet die Gewinnchance basierend auf dem aktuellen Datum, der maximalen Anzahl der Preise
+    und ob der Benutzer bereits gewonnen hat.
     """
-    verbleibende_tage = 25 - heutiges_datum.day  # Tage bis zum 25. Dezember
+    verbleibende_tage = 25 - heutiges_datum.day
     vergebene_preise = anzahl_vergebener_preise()
     noch_zu_vergebene_preise = max_preise - vergebene_preise
 
     if verbleibende_tage <= 0 or noch_zu_vergebene_preise <= 0:
-        return 0  # Keine Gewinnchance, wenn keine Preise oder Tage übrig sind
+        return 0
 
-    # Tägliche Gewinnchance basierend auf den noch zu vergebenden Preisen und den verbleibenden Tagen
-    tägliche_gewinnchance = noch_zu_vergebene_preise / verbleibende_tage
-    return tägliche_gewinnchance
+    gewinnchance = noch_zu_vergebene_preise / verbleibende_tage
+
+    # Reduzierte Gewinnchance für Benutzer, die bereits gewonnen haben
+    if hat_gewonnen(benutzername):
+        return gewinnchance * 0.1  # Beispiel: 10% der normalen Gewinnchance
+
+    return gewinnchance
 
 def hat_teilgenommen(benutzername, tag):
     if not os.path.exists("teilnehmer.txt"):
@@ -121,10 +133,10 @@ def oeffne_tuerchen(tag):
         tuerchen_status[tag].add(benutzername)
 
         vergebene_preise = anzahl_vergebener_preise()
-        gewinnchance = gewinnchance_ermitteln(heute, max_preise)
+        gewinnchance = gewinnchance_ermitteln(benutzername, heute, max_preise)
         if DEBUG: logging.debug(f"Gewinnchance für {benutzername} am Tag {tag}: {gewinnchance}")
 
-        if vergebene_preise < max_preise and get_local_datetime().hour in gewinn_zeiten and random.random() < gewinnchance:
+        if vergebene_preise < max_preise und get_local_datetime().hour in gewinn_zeiten and random.random() < gewinnchance:
             speichere_gewinner(benutzername, tag)
             qr = qrcode.QRCode(
                 version=1,
