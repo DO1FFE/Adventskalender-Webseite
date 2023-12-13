@@ -8,7 +8,7 @@ import random
 import qrcode
 import os
 import pytz
-from flask import Flask, request, make_response, render_template_string, send_from_directory
+from flask import Flask, request, make_response, render_template_string, send_from_directory, Markup
 
 # Logging-Konfiguration
 logging.basicConfig(filename='debug.log', level=logging.DEBUG, 
@@ -136,8 +136,8 @@ def oeffne_tuerchen(tag):
             qr_filename = f"qr_codes/{benutzername}_{tag}.png"
             img.save(qr_filename)
             if DEBUG: logging.debug(f"QR-Code generiert und gespeichert: {qr_filename}")
-
-            return make_response(render_template_string(GENERIC_PAGE, content=f"Glückwunsch! Du hast ein Freigetränk in der Clubstation des OV L11 gewonnen. <a href='/download_qr/{qr_filename}'>Lade deinen QR-Code herunter</a> oder sieh ihn dir <a href='/qr_codes/{qr_filename}'>hier an</a>."))
+            content = Markup(f"Glückwunsch! Du hast ein Freigetränk in der Clubstation des OV L11 gewonnen. <a href='/download_qr/{qr_filename}'>Lade deinen QR-Code herunter</a> oder sieh ihn dir <a href='/qr_codes/{qr_filename}'>hier an</a>.")
+            return make_response(render_template_string(GENERIC_PAGE, content=content))
         else:
             if DEBUG: logging.debug(f"Kein Gewinn für {benutzername} an Tag {tag}")
             return make_response(render_template_string(GENERIC_PAGE, content="Du hattest heute leider kein Glück, versuche es morgen noch einmal!"))
