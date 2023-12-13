@@ -122,6 +122,8 @@ def oeffne_tuerchen(tag):
 
         vergebene_preise = anzahl_vergebener_preise()
         gewinnchance = gewinnchance_ermitteln(heute, max_preise)
+        if DEBUG: logging.debug(f"Gewinnchance für {benutzername} am Tag {tag}: {gewinnchance}")
+
         if vergebene_preise < max_preise and get_local_datetime().hour in gewinn_zeiten and random.random() < gewinnchance:
             speichere_gewinner(benutzername, tag)
             qr = qrcode.QRCode(
