@@ -147,8 +147,8 @@ def oeffne_tuerchen(tag):
             qr.add_data(f"{tag}-{benutzername}-OV L11-2023")
             qr.make(fit=True)
             img = qr.make_image(fill_color="black", back_color="white")
-            qr_filename = f"qr_codes/{benutzername}_{tag}.png"
-            img.save(qr_filename)
+            qr_filename = f"{benutzername}_{tag}.png"  # Pfad korrigiert
+            img.save(os.path.join('qr_codes', qr_filename))  # Speicherort korrigiert
             if DEBUG: logging.debug(f"QR-Code generiert und gespeichert: {qr_filename}")
             content = Markup(f"Glückwunsch! Du hast ein Freigetränk in der Clubstation des OV L11 gewonnen. <a href='/download_qr/{qr_filename}'>Lade deinen QR-Code herunter</a> oder sieh ihn dir <a href='/qr_codes/{qr_filename}'>hier an</a>.")
             return make_response(render_template_string(GENERIC_PAGE, content=content))
