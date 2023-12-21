@@ -306,6 +306,12 @@ ADMIN_PAGE = '''
         <a href="/">Zurück zum Adventskalender</a>
       </nav>
     </header>
+    <h1>Statistik</h1>
+    <div>
+        <div>
+          <img src="/event_graphen.png" alt="Statistiken">
+        </div>
+    </div>
     <h1>QR-Codes</h1>
     <div>
       {% for file in qr_files %}
