@@ -168,6 +168,11 @@ def download_qr(filename):
 def qr_code(filename):
     return send_from_directory('qr_codes', filename)
 
+# Route für das Ausliefern von Event-Graphen hinzufügen
+@app.route('/event_graphen/<filename>')
+def event_graph(filename):
+    return send_from_directory('event_graphen', filename)
+
 # HTML-Templates mit Header und Footer
 HOME_PAGE = '''
 <!doctype html>
@@ -309,7 +314,7 @@ ADMIN_PAGE = '''
     <h1>Statistik</h1>
     <div>
         <div>
-          <img src="/event_graphen.png" alt="Statistiken">
+          <img src="/event_graphen/event_graphen.png" alt="Statistiken">
         </div>
     </div>
     <h1>QR-Codes</h1>
