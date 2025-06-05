@@ -19,21 +19,21 @@ Dieses Repository enthält den Code für einen digitalen Adventskalender, spezie
 ## Setup
 
 1. Stellen Sie sicher, dass Python auf Ihrem System installiert ist.
-2. Installieren Sie Flask und die `qrcode`-Bibliothek:
+2. Installieren Sie Flask, `qrcode` und `pytz`:
    ```bash
-   pip install Flask qrcode
+   pip install Flask qrcode pytz
    ```
 3. Klonen Sie das Repository und navigieren Sie in das Projektverzeichnis.
 4. Starten Sie den Server:
    ```bash
-   python app.py
+   python advent.py
    ```
 5. Öffnen Sie einen Webbrowser und gehen Sie zu `http://localhost:8087/`.
 
 ## Konfiguration
 
-- Sie können die Uhrzeiten für die Gewinnvergabe in der Datei `app.py` anpassen.
-- Die Farben der Türchen können ebenfalls in `app.py` geändert werden.
+- Sie können die Uhrzeiten für die Gewinnvergabe in der Datei `advent.py` anpassen.
+- Die Farben der Türchen können ebenfalls in `advent.py` geändert werden.
 
 ## Sicherheitshinweise
 
