@@ -8,7 +8,8 @@ import random
 import qrcode
 import os
 import pytz
-from flask import Flask, request, make_response, render_template_string, send_from_directory, Markup
+from flask import Flask, request, make_response, render_template_string, send_from_directory
+from markupsafe import Markup
 
 # Logging-Konfiguration
 logging.basicConfig(filename='debug.log', level=logging.DEBUG, 

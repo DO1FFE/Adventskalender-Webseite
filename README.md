@@ -26,14 +26,14 @@ Dieses Repository enthält den Code für einen digitalen Adventskalender, spezie
 3. Klonen Sie das Repository und navigieren Sie in das Projektverzeichnis.
 4. Starten Sie den Server:
    ```bash
-   python app.py
+   python advent.py
    ```
 5. Öffnen Sie einen Webbrowser und gehen Sie zu `http://localhost:8087/`.
 
 ## Konfiguration
 
-- Sie können die Uhrzeiten für die Gewinnvergabe in der Datei `app.py` anpassen.
-- Die Farben der Türchen können ebenfalls in `app.py` geändert werden.
+- Sie können die Uhrzeiten für die Gewinnvergabe in der Datei `advent.py` anpassen.
+- Die Farben der Türchen können ebenfalls in `advent.py` geändert werden.
 
 ## Sicherheitshinweise
 
