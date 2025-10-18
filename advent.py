@@ -179,7 +179,29 @@ def startseite():
     heute = get_local_datetime().date()
     if DEBUG: logging.debug(f"Startseite - Heute: {heute}")
 
-    _, max_preise, verbleibende_preise, _ = get_prize_stats()
+    prizes, max_preise, verbleibende_preise, _ = get_prize_stats()
+
+    prize_names = [prize.get("name", "").strip() for prize in prizes if prize.get("total", 0) > 0]
+
+    def format_prize_phrase(names):
+        filtered = [name for name in names if name]
+        if not filtered:
+            return ""
+        if len(filtered) == 1:
+            return filtered[0]
+        if len(filtered) == 2:
+            return f"{filtered[0]} oder {filtered[1]}"
+        return ", ".join(filtered[:-1]) + f" oder {filtered[-1]}"
+
+    prize_phrase = format_prize_phrase(prize_names)
+
+    weihnachten = datetime.date(heute.year, 12, 24)
+    if heute.month == 12 and heute > weihnachten:
+        tage_bis_weihnachten = 0
+    else:
+        if heute > weihnachten:
+            weihnachten = datetime.date(heute.year + 1, 12, 24)
+        tage_bis_weihnachten = max((weihnachten - heute).days, 0)
 
     tuerchen_status.clear()
     tuerchen_status.update({tag: set() for tag in range(1, 25)})
@@ -199,6 +221,9 @@ def startseite():
         "tuerchen_farben": tuerchen_farben,
         "verbleibende_preise": verbleibende_preise,
         "max_preise": max_preise,
+        "prize_phrase": prize_phrase,
+        "prizes": prizes,
+        "tage_bis_weihnachten": tage_bis_weihnachten,
     }
 
     if request.method == 'POST' and not username:
@@ -360,6 +385,69 @@ HOME_PAGE = '''
         font-weight: 600;
         color: #ffcf5c;
       }
+      .intro-grid {
+        display: grid;
+        gap: 20px;
+        max-width: 960px;
+        margin: 0 auto 35px;
+      }
+      @media (min-width: 768px) {
+        .intro-grid {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+      }
+      .intro-card {
+        background: rgba(12, 35, 52, 0.75);
+        border-radius: 16px;
+        padding: 20px 24px;
+        box-shadow: 0 10px 26px rgba(0, 0, 0, 0.35);
+        border: 1px solid rgba(255, 255, 255, 0.15);
+        text-align: center;
+      }
+      .intro-card p {
+        background: transparent;
+        box-shadow: none;
+        margin-bottom: 12px;
+      }
+      .intro-card h2 {
+        margin-top: 0;
+        font-family: 'Mountains of Christmas', 'Open Sans', cursive;
+        font-size: 1.8rem;
+        color: #ffcf5c;
+      }
+      .countdown-circle {
+        width: 120px;
+        height: 120px;
+        margin: 0 auto 15px;
+        border-radius: 50%;
+        background: radial-gradient(circle at 30% 30%, #ffcf5c, #ff7b7b);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        color: #12263f;
+        font-weight: 700;
+        box-shadow: 0 14px 28px rgba(0, 0, 0, 0.4);
+      }
+      .countdown-circle span {
+        font-size: 2.2rem;
+        line-height: 1;
+      }
+      .countdown-text {
+        margin: 0;
+        color: #ffeecf;
+        font-weight: 600;
+      }
+      .prize-list {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+      }
+      .prize-list li {
+        margin-bottom: 8px;
+        color: #ffeecf;
+        font-weight: 600;
+      }
       main {
         padding: 30px 20px 140px;
         position: relative;
@@ -474,7 +562,40 @@ HOME_PAGE = '''
     </header>
     <main>
       <h1>Adventskalender des OV L11</h1>
-      <p>Stell jeden Tag ein neues Türchen frei, genieße die winterliche Vorfreude und sichere dir mit etwas Glück ein Freigetränk in unserer festlich geschmückten Clubstation!</p>
+      <p>Stell jeden Tag ein neues Türchen frei, genieße die winterliche Vorfreude und sichere dir mit etwas Glück {% if prize_phrase %}einen unserer festlichen Preise wie {{ prize_phrase }}{% else %}einen festlichen Preis{% endif %} in unserer festlich geschmückten Clubstation!</p>
+      <section class="intro-grid">
+        <div class="intro-card">
+          <h2>Countdown bis Heiligabend</h2>
+          <div class="countdown-circle">
+            {% if tage_bis_weihnachten > 0 %}
+              <span>{{ tage_bis_weihnachten }}</span>
+              <small>{% if tage_bis_weihnachten == 1 %}Tag{% else %}Tage{% endif %}</small>
+            {% else %}
+              <span>🎄</span>
+            {% endif %}
+          </div>
+          <p class="countdown-text">
+            {% if tage_bis_weihnachten > 0 %}
+              Noch {{ tage_bis_weihnachten }} {% if tage_bis_weihnachten == 1 %}Tag{% else %}Tage{% endif %} voller Vorfreude bis Heiligabend.
+            {% else %}
+              Frohe Weihnachten! Alle Türchen sind geöffnet – genieße die festliche Zeit.
+            {% endif %}
+          </p>
+        </div>
+        <div class="intro-card">
+          <h2>Festliche Gewinne</h2>
+          <p class="countdown-text">Diese Überraschungen warten auf dich:</p>
+          {% if prizes %}
+            <ul class="prize-list">
+              {% for prize in prizes %}
+                <li>{{ prize.name }}{% if prize.total %} – insgesamt {{ prize.total }}{% endif %}{% if prize.remaining != prize.total %} (noch {{ prize.remaining }} verfügbar){% endif %}</li>
+              {% endfor %}
+            </ul>
+          {% else %}
+            <p class="countdown-text">Die Preise werden gerade vorbereitet. Schau bald wieder vorbei!</p>
+          {% endif %}
+        </div>
+      </section>
       {% if not username %}
         <form method="post">
           <label for="username">Dein vollständiger Name oder Rufzeichen:</label>
