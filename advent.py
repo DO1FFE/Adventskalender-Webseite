@@ -512,41 +512,136 @@ HOME_PAGE = '''
         margin-bottom: 20px;
         color: #ffeecf;
       }
-      .tuerchen-container {
+      .calendar-board {
+        position: relative;
+        margin: 30px auto 80px;
+        padding: 30px 28px 36px;
+        max-width: 760px;
+        background: linear-gradient(120deg, rgba(82, 45, 26, 0.92), rgba(53, 30, 18, 0.96));
+        border: 12px solid #d9b26f;
+        border-radius: 28px;
+        box-shadow: 0 22px 45px rgba(0, 0, 0, 0.45);
+        overflow: hidden;
+      }
+      .calendar-board::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background-image: repeating-linear-gradient(
+          115deg,
+          rgba(255, 255, 255, 0.06) 0px,
+          rgba(255, 255, 255, 0.06) 12px,
+          transparent 12px,
+          transparent 26px
+        );
+        mix-blend-mode: soft-light;
+        opacity: 0.7;
+        pointer-events: none;
+      }
+      .calendar-header {
+        position: relative;
         display: flex;
-        flex-wrap: wrap;
-        justify-content: center;
-        gap: 10px;
-        padding-bottom: 80px;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 22px;
+        padding: 12px 20px;
+        border-radius: 18px;
+        background: linear-gradient(135deg, rgba(255, 226, 169, 0.9), rgba(255, 189, 111, 0.85));
+        color: #53271d;
+        font-family: 'Mountains of Christmas', 'Open Sans', cursive;
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8), 0 12px 26px rgba(0, 0, 0, 0.25);
+        text-transform: uppercase;
+        letter-spacing: 2px;
+      }
+      .calendar-header span {
+        font-size: 1.4rem;
+      }
+      .tuerchen-container {
+        position: relative;
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+        gap: 18px;
+        justify-items: center;
+        perspective: 900px;
       }
       .tuerchen {
+        position: relative;
         display: inline-flex;
         align-items: center;
         justify-content: center;
         width: 110px;
         height: 110px;
-        margin: 10px;
-        border-radius: 12px;
-        font-size: 26px;
+        border-radius: 14px;
+        font-size: 28px;
         font-weight: 700;
-        color: #1f2a44;
+        color: #2f180f;
         text-decoration: none;
-        border: 2px solid rgba(255, 255, 255, 0.7);
-        box-shadow: 0 10px 20px rgba(0, 0, 0, 0.35);
-        transition: transform 0.2s ease, box-shadow 0.2s ease, filter 0.3s ease;
-        background-blend-mode: screen;
+        border: 3px solid rgba(255, 242, 214, 0.7);
+        box-shadow: 0 18px 28px rgba(0, 0, 0, 0.45);
+        transition: transform 0.35s ease, box-shadow 0.35s ease;
+        background: linear-gradient(150deg, rgba(255, 255, 255, 0.85), var(--door-color, #ffd27f));
+        transform-origin: left center;
+        transform-style: preserve-3d;
+        overflow: hidden;
+      }
+      .tuerchen::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background: linear-gradient(120deg, rgba(255, 255, 255, 0.55), rgba(255, 255, 255, 0));
+        opacity: 0.9;
+        pointer-events: none;
+      }
+      .tuerchen::after {
+        content: "";
+        position: absolute;
+        right: 14px;
+        top: 50%;
+        transform: translateY(-50%);
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+        background: radial-gradient(circle at 30% 30%, #ffe7b4, #d9a23d);
+        box-shadow: 0 0 6px rgba(255, 220, 150, 0.8);
+      }
+      .tuerchen .door-number {
+        position: relative;
+        z-index: 1;
+        text-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
+        letter-spacing: 1px;
       }
       .tuerchen:hover {
-        transform: translateY(-6px);
-        box-shadow: 0 14px 24px rgba(0, 0, 0, 0.45);
+        transform: rotateY(-14deg) translateY(-4px);
+        box-shadow: 0 24px 36px rgba(0, 0, 0, 0.55);
+      }
+      .tuerchen.current-day {
+        box-shadow: 0 26px 38px rgba(255, 220, 150, 0.55), 0 18px 28px rgba(0, 0, 0, 0.45);
+        animation: door-glow 1.6s ease-in-out infinite;
+      }
+      @keyframes door-glow {
+        0%, 100% {
+          filter: brightness(1);
+        }
+        50% {
+          filter: brightness(1.15);
+        }
       }
       .disabled {
-        filter: grayscale(100%) brightness(0.8);
         pointer-events: none;
         cursor: default;
-        opacity: 0.7;
-        transform: none;
-        box-shadow: none;
+        transform: rotateY(-30deg) translateX(6px);
+        box-shadow: 0 18px 28px rgba(0, 0, 0, 0.25), inset 0 0 35px rgba(255, 255, 255, 0.35);
+        background: linear-gradient(145deg, rgba(255, 239, 217, 0.95), rgba(249, 206, 151, 0.85));
+      }
+      .disabled::before {
+        opacity: 0.35;
+      }
+      .disabled::after {
+        opacity: 0;
+      }
+      .disabled .door-number {
+        color: #a2552f;
+        text-shadow: none;
       }
       footer p {
         margin: 0;
@@ -605,12 +700,20 @@ HOME_PAGE = '''
         </form>
       {% else %}
         <div class="welcome">Willkommen zurück, {{ username }}! Viel Glück beim heutigen Türchen.</div>
-        <div class="tuerchen-container">
-          {% for num in tuerchen %}
-            <a href="{% if not tuerchen_status[num] and num >= heute.day %}/oeffne_tuerchen/{{ num }}{% else %}#{% endif %}" class="tuerchen{% if tuerchen_status[num] or num < heute.day %} disabled{% endif %}" style="background-color: {{ tuerchen_farben[num-1] }}">
-              {{ num }}
-            </a>
-          {% endfor %}
+        <div class="calendar-board">
+          <div class="calendar-header">
+            <span>Dezember</span>
+            <span>{{ heute.year }}</span>
+          </div>
+          <div class="tuerchen-container">
+            {% for num in tuerchen %}
+              <a href="{% if not tuerchen_status[num] and num >= heute.day %}/oeffne_tuerchen/{{ num }}{% else %}#{% endif %}"
+                 class="tuerchen{% if tuerchen_status[num] or num < heute.day %} disabled{% endif %}{% if num == heute.day %} current-day{% endif %}"
+                 style="--door-color: {{ tuerchen_farben[num-1] }};">
+                <span class="door-number">{{ "%02d"|format(num) }}</span>
+              </a>
+            {% endfor %}
+          </div>
         </div>
       {% endif %}
     </main>
