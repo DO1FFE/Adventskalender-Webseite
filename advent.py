@@ -756,14 +756,36 @@ def admin_page():
     prizes = load_prizes()
 
     if request.method == 'POST':
-        raw_prizes = request.form.get('prize_data', '')
-        try:
-            prizes = parse_prize_configuration(raw_prizes)
-            save_prizes(prizes)
-            message = "Preise wurden aktualisiert."
-        except ValueError as exc:
-            is_error = True
-            message = str(exc)
+        action = request.form.get('action', 'update_prizes')
+
+        if action == 'reset_teilnehmer':
+            try:
+                with open('teilnehmer.txt', 'w', encoding='utf-8'):
+                    pass
+                message = "Teilnehmerliste wurde geleert."
+            except OSError as exc:
+                is_error = True
+                message = f"Teilnehmerdatei konnte nicht geleert werden: {exc}"
+
+        elif action == 'reset_gewinner':
+            try:
+                with open('gewinner.txt', 'w', encoding='utf-8'):
+                    pass
+                message = "Gewinnerliste wurde geleert."
+            except OSError as exc:
+                is_error = True
+                message = f"Gewinnerdatei konnte nicht geleert werden: {exc}"
+
+        else:
+            raw_prizes = request.form.get('prize_data', '')
+            try:
+                prizes = parse_prize_configuration(raw_prizes)
+                save_prizes(prizes)
+                message = "Preise wurden aktualisiert."
+            except ValueError as exc:
+                is_error = True
+                message = str(exc)
+
         prizes = load_prizes()
 
     prizes, total_prizes, remaining_prizes, awarded_prizes = get_prize_stats(prizes)
@@ -838,6 +860,9 @@ ADMIN_PAGE = '''
         padding: 1.5rem;
         background: #f9fbfd;
         margin-bottom: 1.5rem;
+      }
+      .panel form {
+        margin-top: 1rem;
       }
       .grid {
         display: grid;
@@ -939,6 +964,7 @@ ADMIN_PAGE = '''
         <h2>Preise verwalten</h2>
         <p>Eintrag pro Zeile im Format <code>Name=Gesamt</code> oder <code>Name=Gesamt/Verfügbar</code>. Zeilen mit Anzahl 0 werden ignoriert.</p>
         <form method="post">
+          <input type="hidden" name="action" value="update_prizes">
           <textarea name="prize_data" id="prize_data">{{ prize_lines }}</textarea>
           <button type="submit">Preise speichern</button>
         </form>
@@ -954,10 +980,18 @@ ADMIN_PAGE = '''
         <section class="panel">
           <h2>Teilnehmer</h2>
           <pre>{{ teilnehmer_inhalt }}</pre>
+          <form method="post">
+            <input type="hidden" name="action" value="reset_teilnehmer">
+            <button type="submit">Teilnehmer zurücksetzen</button>
+          </form>
         </section>
         <section class="panel">
           <h2>Gewinner</h2>
           <pre>{{ gewinner_inhalt }}</pre>
+          <form method="post">
+            <input type="hidden" name="action" value="reset_gewinner">
+            <button type="submit">Gewinner zurücksetzen</button>
+          </form>
         </section>
       </div>
 
