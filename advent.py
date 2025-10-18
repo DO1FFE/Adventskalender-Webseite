@@ -183,27 +183,175 @@ HOME_PAGE = '''
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Adventskalender</title>
     <style>
-      body { font-family: Arial, sans-serif; }
-      header, footer { padding: 10px; background-color: #f1f1f1; text-align: center; }
-      nav a { margin-right: 15px; }
-      .tuerchen { 
-        display: inline-block;
-        width: 100px;
-        height: 100px;
-        margin: 10px;
-        text-align: center;
-        vertical-align: middle;
-        line-height: 100px;
-        border-radius: 10px;
-        font-size: 20px;
-        font-weight: bold;
-        color: black;
-        text-decoration: none;
+      @import url('https://fonts.googleapis.com/css2?family=Mountains+of+Christmas:wght@400;700&family=Open+Sans:wght@400;600&display=swap');
+      * { box-sizing: border-box; }
+      body {
+        font-family: 'Open Sans', Arial, sans-serif;
+        margin: 0;
+        min-height: 100vh;
+        color: #f8f9fa;
+        background: linear-gradient(180deg, #0b1d2b 0%, #12324a 50%, #1c5560 100%);
+        position: relative;
+        overflow-x: hidden;
+        padding-bottom: 80px;
       }
-      .disabled { 
-        filter: grayscale(100%);
+      body::before,
+      body::after {
+        content: "";
+        position: fixed;
+        top: -10%;
+        left: -10%;
+        width: 120%;
+        height: 120%;
+        background-image: radial-gradient(2px 2px at 20px 20px, rgba(255,255,255,0.8) 50%, transparent 50%),
+                          radial-gradient(3px 3px at 70px 50px, rgba(255,255,255,0.6) 50%, transparent 50%),
+                          radial-gradient(1.5px 1.5px at 150px 120px, rgba(255,255,255,0.9) 50%, transparent 50%);
+        animation: snow 18s linear infinite;
+        opacity: 0.6;
+        pointer-events: none;
+      }
+      body::after {
+        animation-duration: 28s;
+        opacity: 0.4;
+        background-image: radial-gradient(1.5px 1.5px at 40px 30px, rgba(255,255,255,0.7) 50%, transparent 50%),
+                          radial-gradient(2px 2px at 90px 90px, rgba(255,255,255,0.5) 50%, transparent 50%),
+                          radial-gradient(1px 1px at 130px 70px, rgba(255,255,255,0.9) 50%, transparent 50%);
+      }
+      @keyframes snow {
+        from { transform: translateY(-10%); }
+        to { transform: translateY(100%); }
+      }
+      header, footer {
+        padding: 18px;
+        background: rgba(15, 46, 72, 0.85);
+        text-align: center;
+        border-bottom: 2px solid rgba(255, 255, 255, 0.2);
+        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.4);
+      }
+      footer {
+        border-bottom: none;
+        border-top: 2px solid rgba(255, 255, 255, 0.2);
+        position: fixed;
+        bottom: 0;
+        width: 100%;
+      }
+      nav a {
+        margin: 0 10px;
+        color: #ffeecf;
+        text-decoration: none;
+        font-weight: 600;
+        transition: color 0.3s ease;
+      }
+      nav a:hover {
+        color: #ffcf5c;
+      }
+      .preise {
+        margin-top: 10px;
+        font-weight: 600;
+        color: #ffcf5c;
+      }
+      main {
+        padding: 30px 20px 140px;
+        position: relative;
+        z-index: 1;
+      }
+      h1 {
+        font-family: 'Mountains of Christmas', 'Open Sans', cursive;
+        font-size: 2.8rem;
+        text-align: center;
+        margin: 30px auto 10px;
+        text-shadow: 0 3px 6px rgba(0, 0, 0, 0.6);
+        letter-spacing: 1px;
+      }
+      p {
+        text-align: center;
+        max-width: 720px;
+        margin: 0 auto 25px;
+        line-height: 1.6;
+        background: rgba(12, 35, 52, 0.7);
+        padding: 12px 20px;
+        border-radius: 12px;
+        box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3);
+      }
+      form {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        gap: 12px;
+        flex-wrap: wrap;
+        margin-bottom: 35px;
+      }
+      label {
+        font-weight: 600;
+      }
+      input[type="text"] {
+        padding: 10px 14px;
+        border-radius: 8px;
+        border: none;
+        width: 240px;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+      }
+      button {
+        padding: 10px 18px;
+        border-radius: 8px;
+        border: none;
+        background: linear-gradient(135deg, #ff7b7b, #ffcf5c);
+        color: #1b1b1b;
+        font-weight: 700;
+        cursor: pointer;
+        text-transform: uppercase;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
+      }
+      button:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 8px 15px rgba(0, 0, 0, 0.35);
+      }
+      .welcome {
+        text-align: center;
+        font-size: 1.2rem;
+        margin-bottom: 20px;
+        color: #ffeecf;
+      }
+      .tuerchen-container {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: center;
+        gap: 10px;
+        padding-bottom: 80px;
+      }
+      .tuerchen {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 110px;
+        height: 110px;
+        margin: 10px;
+        border-radius: 12px;
+        font-size: 26px;
+        font-weight: 700;
+        color: #1f2a44;
+        text-decoration: none;
+        border: 2px solid rgba(255, 255, 255, 0.7);
+        box-shadow: 0 10px 20px rgba(0, 0, 0, 0.35);
+        transition: transform 0.2s ease, box-shadow 0.2s ease, filter 0.3s ease;
+        background-blend-mode: screen;
+      }
+      .tuerchen:hover {
+        transform: translateY(-6px);
+        box-shadow: 0 14px 24px rgba(0, 0, 0, 0.45);
+      }
+      .disabled {
+        filter: grayscale(100%) brightness(0.8);
         pointer-events: none;
         cursor: default;
+        opacity: 0.7;
+        transform: none;
+        box-shadow: none;
+      }
+      footer p {
+        margin: 0;
+        color: #ffeecf;
       }
     </style>
   </head>
@@ -214,24 +362,26 @@ HOME_PAGE = '''
         <div class="preise">Verbleibende Preise: {{ verbleibende_preise }} von {{ max_preise }}</div>
       </nav>
     </header>
-    <h1>Adventskalender des OV L11</h1>
-    <p>Jeden Tag hast du die Chance auf ein Freigetränk in unserer Clubstation. Viel Glück!</p>
-    {% if not username %}
-      <form method="post">
-        <label for="username">Dein vollständiger Name oder Rufzeichen:</label>
-        <input type="text" id="username" name="username" required>
-        <button type="submit">Name/Rufzeichen setzen</button>
-      </form>
-    {% else %}
-      <p>Willkommen, {{ username }}!</p>
-      <div>
-        {% for num in tuerchen %}
-          <a href="{% if not tuerchen_status[num] and num >= heute.day %}/oeffne_tuerchen/{{ num }}{% else %}#{% endif %}" class="tuerchen{% if tuerchen_status[num] or num < heute.day %} disabled{% endif %}" style="background-color: {{ tuerchen_farben[num-1] }}">
-            {{ num }}
-          </a>
-        {% endfor %}
-      </div>
-    {% endif %}
+    <main>
+      <h1>Adventskalender des OV L11</h1>
+      <p>Stell jeden Tag ein neues Türchen frei, genieße die winterliche Vorfreude und sichere dir mit etwas Glück ein Freigetränk in unserer festlich geschmückten Clubstation!</p>
+      {% if not username %}
+        <form method="post">
+          <label for="username">Dein vollständiger Name oder Rufzeichen:</label>
+          <input type="text" id="username" name="username" required>
+          <button type="submit">Name/Rufzeichen setzen</button>
+        </form>
+      {% else %}
+        <div class="welcome">Willkommen zurück, {{ username }}! Viel Glück beim heutigen Türchen.</div>
+        <div class="tuerchen-container">
+          {% for num in tuerchen %}
+            <a href="{% if not tuerchen_status[num] and num >= heute.day %}/oeffne_tuerchen/{{ num }}{% else %}#{% endif %}" class="tuerchen{% if tuerchen_status[num] or num < heute.day %} disabled{% endif %}" style="background-color: {{ tuerchen_farben[num-1] }}">
+              {{ num }}
+            </a>
+          {% endfor %}
+        </div>
+      {% endif %}
+    </main>
     <footer>
       <p>&copy; 2023 Erik Schauer, DO1FFE, do1ffe@darc.de</p>
     </footer>
@@ -247,9 +397,101 @@ GENERIC_PAGE = '''
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Adventskalender</title>
     <style>
-      body { font-family: Arial, sans-serif; }
-      header, footer { padding: 10px; background-color: #f1f1f1; text-align: center; }
-      nav a { margin-right: 15px; }
+      @import url('https://fonts.googleapis.com/css2?family=Mountains+of+Christmas:wght@400;700&family=Open+Sans:wght@400;600&display=swap');
+      * { box-sizing: border-box; }
+      body {
+        font-family: 'Open Sans', Arial, sans-serif;
+        margin: 0;
+        min-height: 100vh;
+        color: #f8f9fa;
+        background: linear-gradient(180deg, #0b1d2b 0%, #12324a 50%, #1c5560 100%);
+        position: relative;
+        overflow-x: hidden;
+        padding-bottom: 80px;
+      }
+      body::before,
+      body::after {
+        content: "";
+        position: fixed;
+        top: -10%;
+        left: -10%;
+        width: 120%;
+        height: 120%;
+        background-image: radial-gradient(2px 2px at 20px 20px, rgba(255,255,255,0.8) 50%, transparent 50%),
+                          radial-gradient(3px 3px at 70px 50px, rgba(255,255,255,0.6) 50%, transparent 50%),
+                          radial-gradient(1.5px 1.5px at 150px 120px, rgba(255,255,255,0.9) 50%, transparent 50%);
+        animation: snow 18s linear infinite;
+        opacity: 0.6;
+        pointer-events: none;
+      }
+      body::after {
+        animation-duration: 28s;
+        opacity: 0.4;
+        background-image: radial-gradient(1.5px 1.5px at 40px 30px, rgba(255,255,255,0.7) 50%, transparent 50%),
+                          radial-gradient(2px 2px at 90px 90px, rgba(255,255,255,0.5) 50%, transparent 50%),
+                          radial-gradient(1px 1px at 130px 70px, rgba(255,255,255,0.9) 50%, transparent 50%);
+      }
+      @keyframes snow {
+        from { transform: translateY(-10%); }
+        to { transform: translateY(100%); }
+      }
+      header, footer {
+        padding: 18px;
+        background: rgba(15, 46, 72, 0.85);
+        text-align: center;
+        border-bottom: 2px solid rgba(255, 255, 255, 0.2);
+        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.4);
+      }
+      footer {
+        border-bottom: none;
+        border-top: 2px solid rgba(255, 255, 255, 0.2);
+        position: fixed;
+        bottom: 0;
+        width: 100%;
+      }
+      nav a {
+        margin: 0 10px;
+        color: #ffeecf;
+        text-decoration: none;
+        font-weight: 600;
+        transition: color 0.3s ease;
+      }
+      nav a:hover {
+        color: #ffcf5c;
+      }
+      .content {
+        position: relative;
+        z-index: 1;
+        max-width: 720px;
+        margin: 50px auto;
+        background: rgba(12, 35, 52, 0.8);
+        padding: 30px;
+        border-radius: 16px;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+        text-align: center;
+        line-height: 1.6;
+      }
+      footer p {
+        margin: 0;
+        color: #ffeecf;
+      }
+      a.button-link {
+        display: inline-block;
+        margin-top: 20px;
+        padding: 10px 18px;
+        border-radius: 8px;
+        background: linear-gradient(135deg, #ff7b7b, #ffcf5c);
+        color: #1b1b1b;
+        font-weight: 700;
+        text-decoration: none;
+        text-transform: uppercase;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
+      }
+      a.button-link:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 8px 15px rgba(0, 0, 0, 0.35);
+      }
     </style>
   </head>
   <body>
@@ -258,7 +500,7 @@ GENERIC_PAGE = '''
         <a href="/">Zurück zum Adventskalender</a>
       </nav>
     </header>
-    <div>{{ content }}</div>
+    <main class="content">{{ content }}</main>
     <footer>
       <p>&copy; 2023 Erik Schauer, DO1FFE, do1ffe@darc.de</p>
     </footer>
@@ -296,14 +538,140 @@ ADMIN_PAGE = '''
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Admin - Adventskalender</title>
     <style>
-      body { font-family: Arial, sans-serif; }
-      header, footer { padding: 10px; background-color: #f1f1f1; text-align: center; }
-      nav a { margin-right: 15px; }
-      .qr-image { margin: 10px; }
-      .qr-filename { text-align: center; }
-      .data-section { margin: 20px 0; }
-      .data-title { font-weight: bold; }
-      .data-content { background-color: #f1f1f1; padding: 10px; }
+      @import url('https://fonts.googleapis.com/css2?family=Mountains+of+Christmas:wght@400;700&family=Open+Sans:wght@400;600&display=swap');
+      * { box-sizing: border-box; }
+      body {
+        font-family: 'Open Sans', Arial, sans-serif;
+        margin: 0;
+        min-height: 100vh;
+        color: #f8f9fa;
+        background: linear-gradient(180deg, #0b1d2b 0%, #12324a 50%, #1c5560 100%);
+        position: relative;
+        overflow-x: hidden;
+        padding-bottom: 80px;
+      }
+      body::before,
+      body::after {
+        content: "";
+        position: fixed;
+        top: -10%;
+        left: -10%;
+        width: 120%;
+        height: 120%;
+        background-image: radial-gradient(2px 2px at 20px 20px, rgba(255,255,255,0.8) 50%, transparent 50%),
+                          radial-gradient(3px 3px at 70px 50px, rgba(255,255,255,0.6) 50%, transparent 50%),
+                          radial-gradient(1.5px 1.5px at 150px 120px, rgba(255,255,255,0.9) 50%, transparent 50%);
+        animation: snow 18s linear infinite;
+        opacity: 0.6;
+        pointer-events: none;
+      }
+      body::after {
+        animation-duration: 28s;
+        opacity: 0.4;
+        background-image: radial-gradient(1.5px 1.5px at 40px 30px, rgba(255,255,255,0.7) 50%, transparent 50%),
+                          radial-gradient(2px 2px at 90px 90px, rgba(255,255,255,0.5) 50%, transparent 50%),
+                          radial-gradient(1px 1px at 130px 70px, rgba(255,255,255,0.9) 50%, transparent 50%);
+      }
+      @keyframes snow {
+        from { transform: translateY(-10%); }
+        to { transform: translateY(100%); }
+      }
+      header, footer {
+        padding: 18px;
+        background: rgba(15, 46, 72, 0.85);
+        text-align: center;
+        border-bottom: 2px solid rgba(255, 255, 255, 0.2);
+        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.4);
+      }
+      footer {
+        border-bottom: none;
+        border-top: 2px solid rgba(255, 255, 255, 0.2);
+        position: fixed;
+        bottom: 0;
+        width: 100%;
+      }
+      nav a {
+        margin: 0 10px;
+        color: #ffeecf;
+        text-decoration: none;
+        font-weight: 600;
+        transition: color 0.3s ease;
+      }
+      nav a:hover {
+        color: #ffcf5c;
+      }
+      main {
+        position: relative;
+        z-index: 1;
+        max-width: 960px;
+        margin: 40px auto 120px;
+        background: rgba(12, 35, 52, 0.85);
+        padding: 30px 40px 50px;
+        border-radius: 18px;
+        box-shadow: 0 12px 35px rgba(0, 0, 0, 0.45);
+      }
+      h1 {
+        font-family: 'Mountains of Christmas', 'Open Sans', cursive;
+        font-size: 2.4rem;
+        text-align: center;
+        margin-bottom: 25px;
+        text-shadow: 0 3px 6px rgba(0, 0, 0, 0.6);
+      }
+      .stats-image {
+        text-align: center;
+        margin-bottom: 30px;
+      }
+      .stats-image img {
+        max-width: 100%;
+        border-radius: 12px;
+        box-shadow: 0 8px 20px rgba(0, 0, 0, 0.4);
+      }
+      .qr-grid {
+        display: grid;
+        gap: 20px;
+        grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+        margin-bottom: 30px;
+      }
+      .qr-card {
+        background: rgba(9, 28, 44, 0.85);
+        padding: 15px;
+        border-radius: 12px;
+        box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+        text-align: center;
+      }
+      .qr-card img {
+        width: 100%;
+        height: auto;
+        border-radius: 8px;
+      }
+      .qr-filename {
+        margin-top: 10px;
+        font-weight: 600;
+        color: #ffcf5c;
+      }
+      .data-section {
+        margin: 25px 0;
+        background: rgba(9, 28, 44, 0.85);
+        border-radius: 12px;
+        padding: 20px;
+        box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+      }
+      .data-title {
+        font-weight: 700;
+        font-size: 1.2rem;
+        color: #ffcf5c;
+        margin-bottom: 10px;
+      }
+      .data-content {
+        background: rgba(12, 35, 52, 0.9);
+        padding: 15px;
+        border-radius: 10px;
+        white-space: pre-wrap;
+      }
+      footer p {
+        margin: 0;
+        color: #ffeecf;
+      }
     </style>
   </head>
   <body>
@@ -312,29 +680,31 @@ ADMIN_PAGE = '''
         <a href="/">Zurück zum Adventskalender</a>
       </nav>
     </header>
-    <h1>Statistik</h1>
-    <div>
-        <div>
-          <img src="/event_graphen/event_graphen.png" alt="Statistiken">
+    <main>
+      <h1>Festliche Statistikübersicht</h1>
+      <div class="stats-image">
+        <img src="/event_graphen/event_graphen.png" alt="Statistiken">
+      </div>
+      <section>
+        <h2 class="data-title">QR-Codes</h2>
+        <div class="qr-grid">
+          {% for file in qr_files %}
+            <div class="qr-card">
+              <img src="/qr_codes/{{ file }}" alt="{{ file }}">
+              <div class="qr-filename">{{ file }}</div>
+            </div>
+          {% endfor %}
         </div>
-    </div>
-    <h1>QR-Codes</h1>
-    <div>
-      {% for file in qr_files %}
-        <div class="qr-image">
-          <img src="/qr_codes/{{ file }}" alt="{{ file }}" width="100" height="100">
-          <p class="qr-filename">{{ file }}</p>
-        </div>
-      {% endfor %}
-    </div>
-    <div class="data-section">
-      <h2 class="data-title">Teilnehmer</h2>
-      <pre class="data-content">{{ teilnehmer_inhalt }}</pre>
-    </div>
-    <div class="data-section">
-      <h2 class="data-title">Gewinner</h2>
-      <pre class="data-content">{{ gewinner_inhalt }}</pre>
-    </div>
+      </section>
+      <section class="data-section">
+        <h2 class="data-title">Teilnehmer</h2>
+        <div class="data-content">{{ teilnehmer_inhalt }}</div>
+      </section>
+      <section class="data-section">
+        <h2 class="data-title">Gewinner</h2>
+        <div class="data-content">{{ gewinner_inhalt }}</div>
+      </section>
+    </main>
     <footer>
       <p>&copy; 2023 Erik Schauer, DO1FFE, do1ffe@darc.de</p>
     </footer>
