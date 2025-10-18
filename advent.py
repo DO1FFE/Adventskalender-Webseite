@@ -254,6 +254,7 @@ def oeffne_tuerchen(tag):
             qr.make(fit=True)
             img = qr.make_image(fill_color="black", back_color="white")
             qr_filename = f"{benutzername}_{tag}.png"  # Pfad korrigiert
+            os.makedirs('qr_codes', exist_ok=True)
             img.save(os.path.join('qr_codes', qr_filename))  # Speicherort korrigiert
             if DEBUG: logging.debug(f"QR-Code generiert und gespeichert: {qr_filename}")
             content = Markup(
@@ -272,7 +273,7 @@ def oeffne_tuerchen(tag):
 @app.route('/download_qr/<filename>', methods=['GET'])
 def download_qr(filename):
     if DEBUG: logging.debug(f"Download-Anfrage für QR-Code: {filename}")
-    return send_from_directory(directory='qr_codes', filename=filename, as_attachment=True)
+    return send_from_directory('qr_codes', filename, as_attachment=True)
 
 @app.route('/qr_codes/<filename>')
 def qr_code(filename):
