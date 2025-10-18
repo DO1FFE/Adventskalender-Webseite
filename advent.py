@@ -339,23 +339,34 @@ HOME_PAGE = '''
         left: -10%;
         width: 120%;
         height: 120%;
-        background-image: radial-gradient(2px 2px at 20px 20px, rgba(255,255,255,0.8) 50%, transparent 50%),
-                          radial-gradient(3px 3px at 70px 50px, rgba(255,255,255,0.6) 50%, transparent 50%),
-                          radial-gradient(1.5px 1.5px at 150px 120px, rgba(255,255,255,0.9) 50%, transparent 50%);
+        background-repeat: repeat;
+        background-image: radial-gradient(2px 2px at 20px 20px, rgba(255,255,255,0.85) 50%, transparent 52%),
+                          radial-gradient(3px 3px at 70px 50px, rgba(255,255,255,0.7) 50%, transparent 52%),
+                          radial-gradient(1.5px 1.5px at 150px 120px, rgba(255,255,255,0.9) 50%, transparent 52%),
+                          radial-gradient(2.5px 2.5px at 100px 180px, rgba(255,255,255,0.8) 50%, transparent 52%),
+                          radial-gradient(2px 2px at 40px 200px, rgba(255,255,255,0.65) 50%, transparent 52%),
+                          radial-gradient(1.5px 1.5px at 180px 80px, rgba(255,255,255,0.95) 50%, transparent 52%);
+        background-size: 220px 220px, 240px 240px, 260px 260px, 210px 210px, 200px 200px, 230px 230px;
+        background-position: 0 0, 50px 80px, 120px 30px, 80px 150px, 10px 100px, 140px 60px;
         animation: snow 18s linear infinite;
         opacity: 0.6;
         pointer-events: none;
       }
       body::after {
         animation-duration: 28s;
-        opacity: 0.4;
-        background-image: radial-gradient(1.5px 1.5px at 40px 30px, rgba(255,255,255,0.7) 50%, transparent 50%),
-                          radial-gradient(2px 2px at 90px 90px, rgba(255,255,255,0.5) 50%, transparent 50%),
-                          radial-gradient(1px 1px at 130px 70px, rgba(255,255,255,0.9) 50%, transparent 50%);
+        opacity: 0.45;
+        background-image: radial-gradient(1.5px 1.5px at 40px 30px, rgba(255,255,255,0.75) 50%, transparent 52%),
+                          radial-gradient(2px 2px at 90px 90px, rgba(255,255,255,0.55) 50%, transparent 52%),
+                          radial-gradient(1px 1px at 130px 70px, rgba(255,255,255,0.85) 50%, transparent 52%),
+                          radial-gradient(2px 2px at 160px 160px, rgba(255,255,255,0.65) 50%, transparent 52%),
+                          radial-gradient(1.8px 1.8px at 20px 150px, rgba(255,255,255,0.7) 50%, transparent 52%),
+                          radial-gradient(1.2px 1.2px at 110px 10px, rgba(255,255,255,0.9) 50%, transparent 52%);
+        background-size: 200px 200px, 220px 220px, 240px 240px, 210px 210px, 190px 190px, 230px 230px;
+        background-position: 20px 40px, 80px 0, 140px 90px, 60px 180px, 10px 120px, 100px 30px;
       }
       @keyframes snow {
-        from { transform: translateY(-10%); }
-        to { transform: translateY(100%); }
+        from { transform: translate3d(-3%, -10%, 0); }
+        to { transform: translate3d(3%, 100%, 0); }
       }
       header, footer {
         padding: 18px;
@@ -752,23 +763,34 @@ GENERIC_PAGE = '''
         left: -10%;
         width: 120%;
         height: 120%;
-        background-image: radial-gradient(2px 2px at 20px 20px, rgba(255,255,255,0.8) 50%, transparent 50%),
-                          radial-gradient(3px 3px at 70px 50px, rgba(255,255,255,0.6) 50%, transparent 50%),
-                          radial-gradient(1.5px 1.5px at 150px 120px, rgba(255,255,255,0.9) 50%, transparent 50%);
+        background-repeat: repeat;
+        background-image: radial-gradient(2px 2px at 20px 20px, rgba(255,255,255,0.85) 50%, transparent 52%),
+                          radial-gradient(3px 3px at 70px 50px, rgba(255,255,255,0.7) 50%, transparent 52%),
+                          radial-gradient(1.5px 1.5px at 150px 120px, rgba(255,255,255,0.9) 50%, transparent 52%),
+                          radial-gradient(2.5px 2.5px at 100px 180px, rgba(255,255,255,0.8) 50%, transparent 52%),
+                          radial-gradient(2px 2px at 40px 200px, rgba(255,255,255,0.65) 50%, transparent 52%),
+                          radial-gradient(1.5px 1.5px at 180px 80px, rgba(255,255,255,0.95) 50%, transparent 52%);
+        background-size: 220px 220px, 240px 240px, 260px 260px, 210px 210px, 200px 200px, 230px 230px;
+        background-position: 0 0, 50px 80px, 120px 30px, 80px 150px, 10px 100px, 140px 60px;
         animation: snow 18s linear infinite;
         opacity: 0.6;
         pointer-events: none;
       }
       body::after {
         animation-duration: 28s;
-        opacity: 0.4;
-        background-image: radial-gradient(1.5px 1.5px at 40px 30px, rgba(255,255,255,0.7) 50%, transparent 50%),
-                          radial-gradient(2px 2px at 90px 90px, rgba(255,255,255,0.5) 50%, transparent 50%),
-                          radial-gradient(1px 1px at 130px 70px, rgba(255,255,255,0.9) 50%, transparent 50%);
+        opacity: 0.45;
+        background-image: radial-gradient(1.5px 1.5px at 40px 30px, rgba(255,255,255,0.75) 50%, transparent 52%),
+                          radial-gradient(2px 2px at 90px 90px, rgba(255,255,255,0.55) 50%, transparent 52%),
+                          radial-gradient(1px 1px at 130px 70px, rgba(255,255,255,0.85) 50%, transparent 52%),
+                          radial-gradient(2px 2px at 160px 160px, rgba(255,255,255,0.65) 50%, transparent 52%),
+                          radial-gradient(1.8px 1.8px at 20px 150px, rgba(255,255,255,0.7) 50%, transparent 52%),
+                          radial-gradient(1.2px 1.2px at 110px 10px, rgba(255,255,255,0.9) 50%, transparent 52%);
+        background-size: 200px 200px, 220px 220px, 240px 240px, 210px 210px, 190px 190px, 230px 230px;
+        background-position: 20px 40px, 80px 0, 140px 90px, 60px 180px, 10px 120px, 100px 30px;
       }
       @keyframes snow {
-        from { transform: translateY(-10%); }
-        to { transform: translateY(100%); }
+        from { transform: translate3d(-3%, -10%, 0); }
+        to { transform: translate3d(3%, 100%, 0); }
       }
       header, footer {
         padding: 18px;
