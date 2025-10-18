@@ -164,10 +164,12 @@ def speichere_teilnehmer(benutzername, tag):
     with open("teilnehmer.txt", "a", encoding="utf-8") as file:
         file.write(f"{benutzername}-{tag}\n")
 
-def speichere_gewinner(benutzername, tag, preis):
+def speichere_gewinner(benutzername, tag, preis, jahr=None):
     if DEBUG: logging.debug(f"Speichere Gewinner {benutzername} für Tag {tag} ({preis})")
+    if jahr is None:
+        jahr = get_local_datetime().year
     with open("gewinner.txt", "a", encoding="utf-8") as file:
-        file.write(f"{benutzername} - Tag {tag} - {preis} - OV L11 - 2023\n")
+        file.write(f"{benutzername} - Tag {tag} - {preis} - OV L11 - {jahr}\n")
 
 @app.route('/', methods=['GET', 'POST'])
 def startseite():
@@ -240,14 +242,15 @@ def oeffne_tuerchen(tag):
             if not preis_name:
                 if DEBUG: logging.debug("Preis konnte nicht reduziert werden")
                 return make_response(render_template_string(GENERIC_PAGE, content="Alle Preise wurden bereits vergeben."))
-            speichere_gewinner(benutzername, tag, preis_name)
+            aktuelles_jahr = heute.year
+            speichere_gewinner(benutzername, tag, preis_name, jahr=aktuelles_jahr)
             qr = qrcode.QRCode(
                 version=1,
                 error_correction=qrcode.constants.ERROR_CORRECT_L,
                 box_size=10,
                 border=4,
             )
-            qr.add_data(f"{tag}-{benutzername}-{preis_name}-OV L11-2023")
+            qr.add_data(f"{tag}-{benutzername}-{preis_name}-OV L11-{aktuelles_jahr}")
             qr.make(fit=True)
             img = qr.make_image(fill_color="black", back_color="white")
             qr_filename = f"{benutzername}_{tag}.png"  # Pfad korrigiert
@@ -489,7 +492,7 @@ HOME_PAGE = '''
       {% endif %}
     </main>
     <footer>
-      <p>&copy; 2023 Erik Schauer, DO1FFE, do1ffe@darc.de</p>
+      <p>&copy; 2023 - 2025 Erik Schauer, DO1FFE, do1ffe@darc.de</p>
     </footer>
   </body>
 </html>
@@ -608,7 +611,7 @@ GENERIC_PAGE = '''
     </header>
     <main class="content">{{ content }}</main>
     <footer>
-      <p>&copy; 2023 Erik Schauer, DO1FFE, do1ffe@darc.de</p>
+      <p>&copy; 2023 - 2025 Erik Schauer, DO1FFE, do1ffe@darc.de</p>
     </footer>
   </body>
 </html>
@@ -852,7 +855,7 @@ ADMIN_PAGE = '''
         {% endif %}
       </section>
 
-      <footer>&copy; 2023 Erik Schauer, DO1FFE, do1ffe@darc.de</footer>
+    <footer>&copy; 2023 - 2025 Erik Schauer, DO1FFE, do1ffe@darc.de</footer>
     </main>
   </body>
 </html>
