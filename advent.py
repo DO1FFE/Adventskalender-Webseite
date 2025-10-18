@@ -29,8 +29,41 @@ app = Flask(__name__)
 # Initialisierung
 tuerchen_status = {tag: set() for tag in range(1, 25)}
 PRIZE_FILE = "preise.json"
+CALENDAR_STATUS_FILE = "kalender_status.json"
 gewinn_zeiten = [12, 13, 14, 15, 16, 17, 18, 19, 20, 21]
 tuerchen_farben = ["#FFCCCC", "#CCFFCC", "#CCCCFF", "#FFFFCC", "#CCFFFF", "#FFCCFF", "#FFCC99", "#99CCFF", "#FF9999", "#99FF99", "#9999FF", "#FF9966"] * 2
+
+def load_calendar_status():
+    if os.path.exists(CALENDAR_STATUS_FILE):
+        try:
+            with open(CALENDAR_STATUS_FILE, "r", encoding="utf-8") as file:
+                data = json.load(file)
+            return bool(data.get("active", True))
+        except (json.JSONDecodeError, OSError, TypeError, ValueError) as exc:
+            logging.error("Fehler beim Laden des Kalenderstatus: %s", exc)
+    return True
+
+
+def save_calendar_status(active):
+    try:
+        with open(CALENDAR_STATUS_FILE, "w", encoding="utf-8") as file:
+            json.dump({"active": bool(active)}, file)
+    except OSError as exc:
+        logging.error("Kalenderstatus konnte nicht gespeichert werden: %s", exc)
+
+
+calendar_active = load_calendar_status()
+
+
+def set_calendar_active(active):
+    global calendar_active
+    calendar_active = bool(active)
+    save_calendar_status(calendar_active)
+
+
+def get_calendar_active():
+    return bool(calendar_active)
+
 
 def get_local_datetime():
     utc_dt = datetime.datetime.now(pytz.utc)  # aktuelle Zeit in UTC
@@ -177,6 +210,7 @@ def startseite():
     username = request.cookies.get('username')
     if DEBUG: logging.debug(f"Startseite aufgerufen - Username: {username}")
 
+    calendar_active = get_calendar_active()
     heute = get_local_datetime().date()
     if DEBUG: logging.debug(f"Startseite - Heute: {heute}")
 
@@ -225,6 +259,7 @@ def startseite():
         "prize_phrase": prize_phrase,
         "prizes": prizes,
         "tage_bis_weihnachten": tage_bis_weihnachten,
+        "calendar_active": calendar_active,
     }
 
     if request.method == 'POST' and not username:
@@ -239,6 +274,13 @@ def startseite():
 @app.route('/oeffne_tuerchen/<int:tag>', methods=['GET'])
 def oeffne_tuerchen(tag):
     benutzername = request.cookies.get('username')
+    if not get_calendar_active():
+        return make_response(
+            render_template_string(
+                GENERIC_PAGE,
+                content="Der Adventskalender ist derzeit nicht aktiv. Bitte schau später noch einmal vorbei.",
+            )
+        )
     if not benutzername:
         return make_response(render_template_string(GENERIC_PAGE, content="Bitte gib zuerst deinen Namen/Rufzeichen auf der Startseite ein."))
 
@@ -517,6 +559,18 @@ HOME_PAGE = '''
         transform: translateY(-2px);
         box-shadow: 0 8px 15px rgba(0, 0, 0, 0.35);
       }
+      .inactive-banner {
+        max-width: 760px;
+        margin: 0 auto 25px;
+        padding: 16px 22px;
+        border-radius: 16px;
+        border: 2px solid rgba(255, 166, 166, 0.65);
+        background: rgba(220, 53, 69, 0.55);
+        color: #fff5f5;
+        font-weight: 600;
+        text-align: center;
+        box-shadow: 0 10px 28px rgba(0, 0, 0, 0.35);
+      }
       .welcome {
         text-align: center;
         font-size: 1.2rem;
@@ -668,6 +722,11 @@ HOME_PAGE = '''
       </nav>
     </header>
     <main>
+      {% if not calendar_active %}
+      <div class="inactive-banner">
+        <strong>Kalender pausiert:</strong> Der Adventskalender ist derzeit deaktiviert. Schau bald wieder vorbei!
+      </div>
+      {% endif %}
       <h1>Adventskalender des OV L11</h1>
       <p>Stell jeden Tag ein neues Türchen frei, genieße die winterliche Vorfreude und sichere dir mit etwas Glück {% if prize_phrase %}einen unserer festlichen Preise wie {{ prize_phrase }}{% else %}einen festlichen Preis{% endif %} in unserer festlich geschmückten Clubstation!</p>
       <section class="intro-grid">
@@ -710,7 +769,7 @@ HOME_PAGE = '''
           <button type="submit">Name/Rufzeichen setzen</button>
         </form>
       {% else %}
-        <div class="welcome">Willkommen zurück, {{ username }}! Viel Glück beim heutigen Türchen.</div>
+        <div class="welcome">Willkommen zurück, {{ username }}! Viel Glück beim heutigen Türchen.{% if not calendar_active %}<br><strong>Hinweis:</strong> Der Adventskalender ist momentan deaktiviert. Türchen können aktuell nicht geöffnet werden.{% endif %}</div>
         <div class="calendar-board">
           <div class="calendar-header">
             <span>Dezember</span>
@@ -718,8 +777,8 @@ HOME_PAGE = '''
           </div>
           <div class="tuerchen-container">
             {% for num in tuerchen %}
-              <a href="{% if not tuerchen_status[num] and num >= heute.day %}/oeffne_tuerchen/{{ num }}{% else %}#{% endif %}"
-                 class="tuerchen{% if tuerchen_status[num] or num < heute.day %} disabled{% endif %}{% if num == heute.day %} current-day{% endif %}"
+              <a href="{% if calendar_active and not tuerchen_status[num] and num >= heute.day %}/oeffne_tuerchen/{{ num }}{% else %}#{% endif %}"
+                 class="tuerchen{% if not calendar_active or tuerchen_status[num] or num < heute.day %} disabled{% endif %}{% if num == heute.day %} current-day{% endif %}"
                  style="--door-color: {{ tuerchen_farben[num-1] }};">
                 <span class="door-number">{{ "%02d"|format(num) }}</span>
               </a>
@@ -880,11 +939,17 @@ def admin_page():
     message = ""
     is_error = False
     prizes = load_prizes()
+    calendar_active = get_calendar_active()
 
     if request.method == 'POST':
         action = request.form.get('action', 'update_prizes')
 
-        if action == 'reset_teilnehmer':
+        if action == 'update_status':
+            new_status = request.form.get('calendar_active') == 'on'
+            set_calendar_active(new_status)
+            calendar_active = new_status
+            message = "Der Kalender wurde aktiviert." if new_status else "Der Kalender wurde deaktiviert."
+        elif action == 'reset_teilnehmer':
             try:
                 with open('teilnehmer.txt', 'w', encoding='utf-8'):
                     pass
@@ -927,6 +992,7 @@ def admin_page():
                 message = str(exc)
 
         prizes = load_prizes()
+        calendar_active = get_calendar_active()
 
     prizes, total_prizes, remaining_prizes, awarded_prizes = get_prize_stats(prizes)
     prize_lines = format_prize_lines(prizes)
@@ -950,6 +1016,7 @@ def admin_page():
         awarded_prizes=awarded_prizes,
         message=message,
         is_error=is_error,
+        calendar_active=calendar_active,
     )
 
 # HTML-Template für die Admin-Seite aktualisieren
@@ -1003,6 +1070,22 @@ ADMIN_PAGE = '''
       }
       .panel form {
         margin-top: 1rem;
+      }
+      .status-form {
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+        flex-wrap: wrap;
+      }
+      .status-form label {
+        display: flex;
+        align-items: center;
+        gap: 0.6rem;
+        font-weight: 600;
+      }
+      .status-hint {
+        margin-top: 0.75rem;
+        color: #334e68;
       }
       .grid {
         display: grid;
@@ -1099,6 +1182,25 @@ ADMIN_PAGE = '''
       {% if message %}
         <div class="message {{ 'error' if is_error else 'ok' }}">{{ message }}</div>
       {% endif %}
+
+      <section class="panel">
+        <h2>Kalenderstatus</h2>
+        <form method="post" class="status-form">
+          <input type="hidden" name="action" value="update_status">
+          <label>
+            <input type="checkbox" name="calendar_active" {% if calendar_active %}checked{% endif %}>
+            Adventskalender ist aktiv
+          </label>
+          <button type="submit">Status speichern</button>
+        </form>
+        <p class="status-hint">
+          {% if calendar_active %}
+            Der Kalender ist aktuell für Besucher freigeschaltet.
+          {% else %}
+            Der Kalender ist derzeit deaktiviert und für Besucher gesperrt.
+          {% endif %}
+        </p>
+      </section>
 
       <section class="panel">
         <h2>Preise verwalten</h2>
