@@ -9,6 +9,7 @@ import qrcode
 import os
 import json
 import pytz
+import shutil
 from flask import Flask, request, make_response, render_template_string, send_from_directory
 from markupsafe import Markup
 
@@ -776,6 +777,20 @@ def admin_page():
                 is_error = True
                 message = f"Gewinnerdatei konnte nicht geleert werden: {exc}"
 
+        elif action == 'reset_qr_codes':
+            try:
+                if os.path.exists('qr_codes'):
+                    for filename in os.listdir('qr_codes'):
+                        path = os.path.join('qr_codes', filename)
+                        if os.path.isfile(path) or os.path.islink(path):
+                            os.remove(path)
+                        elif os.path.isdir(path):
+                            shutil.rmtree(path)
+                message = "QR-Codes wurden gelöscht."
+            except OSError as exc:
+                is_error = True
+                message = f"QR-Codes konnten nicht gelöscht werden: {exc}"
+
         else:
             raw_prizes = request.form.get('prize_data', '')
             try:
@@ -1009,6 +1024,10 @@ ADMIN_PAGE = '''
         {% else %}
           <p>Keine QR-Codes vorhanden.</p>
         {% endif %}
+        <form method="post">
+          <input type="hidden" name="action" value="reset_qr_codes">
+          <button type="submit">QR-Codes löschen</button>
+        </form>
       </section>
 
     <footer>&copy; 2023 - 2025 Erik Schauer, DO1FFE, do1ffe@darc.de</footer>
