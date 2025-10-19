@@ -106,8 +106,14 @@ def get_prize_stats(prizes=None):
     return prizes, total, remaining, awarded
 
 
-def reduce_prize(prizes):
-    available = [prize for prize in prizes if prize.get("remaining", 0) > 0]
+def reduce_prize(prizes, current_day=None):
+    available = []
+    for idx, prize in enumerate(prizes):
+        if prize.get("remaining", 0) <= 0:
+            continue
+        if idx == 0 and current_day not in (None, 24):
+            continue
+        available.append(prize)
     if not available:
         return None
     weights = [prize["remaining"] for prize in available]
@@ -306,10 +312,16 @@ def oeffne_tuerchen(tag):
         if DEBUG: logging.debug(f"Gewinnchance für {benutzername} am Tag {tag}: {gewinnchance}")
 
         if get_local_datetime().hour in gewinn_zeiten and random.random() < gewinnchance:
-            preis_name = reduce_prize(prizes)
+            preis_name = reduce_prize(prizes, heute.day)
             if not preis_name:
                 if DEBUG: logging.debug("Preis konnte nicht reduziert werden")
-                return make_response(render_template_string(GENERIC_PAGE, content="Alle Preise wurden bereits vergeben."))
+                hinweis = "Alle Preise wurden bereits vergeben."
+                if tag != 24 and prizes and prizes[0].get("remaining", 0) > 0:
+                    hinweis = (
+                        "Alle heutigen Preise wurden bereits vergeben. "
+                        "Der Hauptpreis wird erst am 24. Dezember verlost."
+                    )
+                return make_response(render_template_string(GENERIC_PAGE, content=hinweis))
             aktuelles_jahr = heute.year
             speichere_gewinner(benutzername, tag, preis_name, jahr=aktuelles_jahr)
             qr = qrcode.QRCode(
