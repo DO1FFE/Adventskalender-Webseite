@@ -474,9 +474,18 @@ HOME_PAGE = '''
         border-top: 2px solid rgba(255, 255, 255, 0.2);
         position: fixed;
         bottom: 0;
-        left: 50%;
-        transform: translateX(-50%);
+        left: 0;
+        width: 100%;
+        display: flex;
+        justify-content: center;
+        z-index: 1000;
+        align-items: center;
+      }
+      .footer-inner {
         width: min(100%, 960px);
+        margin: 0 auto;
+        text-align: center;
+        padding: 0 24px;
       }
       nav a {
         margin: 0 10px;
@@ -853,7 +862,9 @@ HOME_PAGE = '''
       {% endif %}
     </main>
     <footer>
-      <p>&copy; 2023 - 2025 Erik Schauer, DO1FFE, do1ffe@darc.de</p>
+      <div class="footer-inner">
+        <p>&copy; 2023 - 2025 Erik Schauer, DO1FFE, do1ffe@darc.de</p>
+      </div>
     </footer>
   </body>
 </html>
@@ -928,9 +939,18 @@ GENERIC_PAGE = '''
         border-top: 2px solid rgba(255, 255, 255, 0.2);
         position: fixed;
         bottom: 0;
-        left: 50%;
-        transform: translateX(-50%);
+        left: 0;
+        width: 100%;
+        display: flex;
+        justify-content: center;
+        z-index: 1000;
+        align-items: center;
+      }
+      .footer-inner {
         width: min(100%, 960px);
+        margin: 0 auto;
+        text-align: center;
+        padding: 0 24px;
       }
       nav a {
         margin: 0 10px;
@@ -985,7 +1005,9 @@ GENERIC_PAGE = '''
     </header>
     <main class="content">{{ content }}</main>
     <footer>
-      <p>&copy; 2023 - 2025 Erik Schauer, DO1FFE, do1ffe@darc.de</p>
+      <div class="footer-inner">
+        <p>&copy; 2023 - 2025 Erik Schauer, DO1FFE, do1ffe@darc.de</p>
+      </div>
     </footer>
   </body>
 </html>
@@ -1245,9 +1267,17 @@ ADMIN_PAGE = '''
         box-shadow: 0 -4px 15px rgba(0, 0, 0, 0.25);
         position: fixed;
         bottom: 0;
-        left: 50%;
-        transform: translateX(-50%);
+        left: 0;
+        width: 100%;
+        display: flex;
+        justify-content: center;
+        z-index: 1000;
+        align-items: center;
+      }
+      .footer-inner {
         width: min(100%, 960px);
+        margin: 0 auto;
+        text-align: center;
       }
     </style>
   </head>
@@ -1339,7 +1369,9 @@ ADMIN_PAGE = '''
         </form>
       </section>
 
-    <footer>&copy; 2023 - 2025 Erik Schauer, DO1FFE, do1ffe@darc.de</footer>
+    <footer>
+      <div class="footer-inner">&copy; 2023 - 2025 Erik Schauer, DO1FFE, do1ffe@darc.de</div>
+    </footer>
     </main>
   </body>
 </html>
