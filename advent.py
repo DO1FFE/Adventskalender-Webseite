@@ -11,7 +11,7 @@ import json
 import pytz
 import shutil
 from flask import Flask, request, make_response, render_template_string, send_from_directory
-from markupsafe import Markup
+from markupsafe import Markup, escape
 
 # Logging-Konfiguration
 logging.basicConfig(filename='debug.log', level=logging.DEBUG, 
@@ -83,6 +83,7 @@ def load_prizes():
             for entry in data:
                 name = str(entry.get("name", "")).strip()
                 sponsor = str(entry.get("sponsor", "") or "").strip()
+                sponsor_link = str(entry.get("sponsor_link", "") or "").strip()
                 total = int(entry.get("total", entry.get("quantity", 0)))
                 total = max(total, 0)
                 remaining = int(entry.get("remaining", total))
@@ -93,6 +94,7 @@ def load_prizes():
                         "total": total,
                         "remaining": remaining,
                         "sponsor": sponsor,
+                        "sponsor_link": sponsor_link,
                     }
                     prizes.append(prize_entry)
             if prizes:
@@ -100,7 +102,13 @@ def load_prizes():
         except (json.JSONDecodeError, ValueError, OSError, TypeError) as exc:
             logging.error("Fehler beim Laden der Preise: %s", exc)
     default_prizes = [
-        {"name": "Freigetränk", "total": 15, "remaining": 15, "sponsor": ""}
+        {
+            "name": "Freigetränk",
+            "total": 15,
+            "remaining": 15,
+            "sponsor": "",
+            "sponsor_link": "",
+        }
     ]
     save_prizes(default_prizes)
     return default_prizes
@@ -139,9 +147,13 @@ def format_prize_lines(prizes):
         remaining = prize.get("remaining", total)
         name = prize.get("name", "")
         sponsor = str(prize.get("sponsor", "") or "").strip()
+        sponsor_link = str(prize.get("sponsor_link", "") or "").strip()
         name_segment = name
         if sponsor:
-            name_segment = f"{name} | {sponsor}"
+            sponsor_segment = sponsor
+            if sponsor_link:
+                sponsor_segment = f"{sponsor} ({sponsor_link})"
+            name_segment = f"{name} | {sponsor_segment}"
         if remaining != total:
             lines.append(f"{name_segment}={total}/{remaining}")
         else:
@@ -157,7 +169,8 @@ def parse_prize_configuration(prize_data):
             continue
         if "=" not in stripped:
             raise ValueError(
-                f"Zeile {idx}: Bitte das Format 'Name=Anzahl' oder 'Name | Sponsor=Anzahl' verwenden."
+                "Zeile {}: Bitte das Format 'Name=Anzahl', 'Name | Sponsor=Anzahl' "
+                "oder 'Name | Sponsor (https://link)=Anzahl' verwenden.".format(idx)
             )
         name_part, amount_part = map(str.strip, stripped.split("=", 1))
         if not name_part:
@@ -165,9 +178,20 @@ def parse_prize_configuration(prize_data):
         if not amount_part:
             raise ValueError(f"Zeile {idx}: Anzahl fehlt.")
         sponsor = ""
+        sponsor_link = ""
         if "|" in name_part:
             name_part, sponsor_part = map(str.strip, name_part.split("|", 1))
-            sponsor = sponsor_part
+            potential_sponsor = sponsor_part
+            if potential_sponsor.endswith(")") and "(" in potential_sponsor:
+                base, link_candidate = potential_sponsor.rsplit("(", 1)
+                link_candidate = link_candidate.rstrip(")").strip()
+                if link_candidate and link_candidate.lower().startswith(("http://", "https://")):
+                    sponsor = base.strip()
+                    sponsor_link = link_candidate
+                else:
+                    sponsor = potential_sponsor
+            else:
+                sponsor = potential_sponsor
         name = name_part
         if not name:
             raise ValueError(f"Zeile {idx}: Preisname fehlt.")
@@ -189,6 +213,7 @@ def parse_prize_configuration(prize_data):
             "total": total,
             "remaining": remaining,
             "sponsor": sponsor,
+            "sponsor_link": sponsor_link,
         }
         prizes.append(prize_entry)
     if not prizes:
@@ -356,6 +381,7 @@ def oeffne_tuerchen(tag):
             aktuelles_jahr = heute.year
             preis_name = gewonnener_preis.get("name", "")
             sponsor_name = str(gewonnener_preis.get("sponsor", "") or "").strip()
+            sponsor_link = str(gewonnener_preis.get("sponsor_link", "") or "").strip()
             speichere_gewinner(
                 benutzername,
                 tag,
@@ -376,11 +402,24 @@ def oeffne_tuerchen(tag):
             os.makedirs('qr_codes', exist_ok=True)
             img.save(os.path.join('qr_codes', qr_filename))  # Speicherort korrigiert
             if DEBUG: logging.debug(f"QR-Code generiert und gespeichert: {qr_filename}")
-            sponsor_hint = f" – Sponsor: {sponsor_name}" if sponsor_name else ""
+            prize_label = escape(preis_name)
+            sponsor_hint = Markup("")
+            if sponsor_name:
+                escaped_sponsor_name = escape(sponsor_name)
+                if sponsor_link:
+                    escaped_sponsor_link = escape(sponsor_link)
+                    sponsor_hint = Markup(
+                        " – Sponsor: "
+                        f"<a href=\"{escaped_sponsor_link}\" target=\"_blank\" rel=\"noopener noreferrer\">"
+                        f"{escaped_sponsor_name}</a>"
+                    )
+                else:
+                    sponsor_hint = Markup(f" – Sponsor: {escaped_sponsor_name}")
+            qr_filename_escaped = escape(qr_filename)
             content = Markup(
-                f"Glückwunsch! Du hast {preis_name}{sponsor_hint} gewonnen. "
-                f"<a href='/download_qr/{qr_filename}'>Lade deinen QR-Code herunter</a> "
-                f"oder sieh ihn dir <a href='/qr_codes/{qr_filename}'>hier an</a>."
+                f"Glückwunsch! Du hast {prize_label}{sponsor_hint} gewonnen. "
+                f"<a href='/download_qr/{qr_filename_escaped}'>Lade deinen QR-Code herunter</a> "
+                f"oder sieh ihn dir <a href='/qr_codes/{qr_filename_escaped}'>hier an</a>."
             )
             return make_response(render_template_string(GENERIC_PAGE, content=content))
         else:
@@ -820,7 +859,12 @@ HOME_PAGE = '''
                 <li>
                   {{ prize.name }}
                   {% if prize.get('sponsor') %}
-                    – Sponsor: {{ prize.get('sponsor') }}
+                    – Sponsor:
+                    {% if prize.get('sponsor_link') %}
+                      <a href="{{ prize.get('sponsor_link') }}" target="_blank" rel="noopener noreferrer">{{ prize.get('sponsor') }}</a>
+                    {% else %}
+                      {{ prize.get('sponsor') }}
+                    {% endif %}
                   {% endif %}
                   {% if prize.total %}
                     – insgesamt {{ prize.total }}
@@ -1310,7 +1354,7 @@ ADMIN_PAGE = '''
 
       <section class="panel">
         <h2>Preise verwalten</h2>
-        <p>Eintrag pro Zeile im Format <code>Name | Sponsor=Gesamt</code> oder <code>Name | Sponsor=Gesamt/Verfügbar</code>. Der Sponsor ist optional; Zeilen mit Anzahl 0 werden ignoriert.</p>
+        <p>Eintrag pro Zeile im Format <code>Name | Sponsor=Gesamt</code> oder <code>Name | Sponsor=Gesamt/Verfügbar</code>. Optional kann ein Link mit <code>Name | Sponsor (https://link)=...</code> angegeben werden. Der Sponsor ist optional; Zeilen mit Anzahl 0 werden ignoriert.</p>
         <form method="post">
           <input type="hidden" name="action" value="update_prizes">
           <textarea name="prize_data" id="prize_data">{{ prize_lines }}</textarea>
@@ -1322,7 +1366,13 @@ ADMIN_PAGE = '''
             <li>
               <strong>{{ prize.name }}</strong>
               {% if prize.get('sponsor') %}
-                <em>(Sponsor: {{ prize.get('sponsor') }})</em>
+                <em>(Sponsor:
+                  {% if prize.get('sponsor_link') %}
+                    <a href="{{ prize.get('sponsor_link') }}" target="_blank" rel="noopener noreferrer">{{ prize.get('sponsor') }}</a>
+                  {% else %}
+                    {{ prize.get('sponsor') }}
+                  {% endif %}
+                )</em>
               {% endif %}
               : {{ prize.remaining }} von {{ prize.total }} verfügbar
             </li>
