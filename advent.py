@@ -82,17 +82,26 @@ def load_prizes():
             prizes = []
             for entry in data:
                 name = str(entry.get("name", "")).strip()
+                sponsor = str(entry.get("sponsor", "") or "").strip()
                 total = int(entry.get("total", entry.get("quantity", 0)))
-                remaining = int(entry.get("remaining", total))
                 total = max(total, 0)
+                remaining = int(entry.get("remaining", total))
                 remaining = max(min(remaining, total), 0)
                 if name and total > 0:
-                    prizes.append({"name": name, "total": total, "remaining": remaining})
+                    prize_entry = {
+                        "name": name,
+                        "total": total,
+                        "remaining": remaining,
+                        "sponsor": sponsor,
+                    }
+                    prizes.append(prize_entry)
             if prizes:
                 return prizes
         except (json.JSONDecodeError, ValueError, OSError, TypeError) as exc:
             logging.error("Fehler beim Laden der Preise: %s", exc)
-    default_prizes = [{"name": "Freigetränk", "total": 15, "remaining": 15}]
+    default_prizes = [
+        {"name": "Freigetränk", "total": 15, "remaining": 15, "sponsor": ""}
+    ]
     save_prizes(default_prizes)
     return default_prizes
 
@@ -120,7 +129,7 @@ def reduce_prize(prizes, current_day=None):
     selected = random.choices(available, weights=weights, k=1)[0]
     selected["remaining"] -= 1
     save_prizes(prizes)
-    return selected["name"]
+    return selected
 
 
 def format_prize_lines(prizes):
@@ -129,10 +138,14 @@ def format_prize_lines(prizes):
         total = prize.get("total", 0)
         remaining = prize.get("remaining", total)
         name = prize.get("name", "")
+        sponsor = str(prize.get("sponsor", "") or "").strip()
+        name_segment = name
+        if sponsor:
+            name_segment = f"{name} | {sponsor}"
         if remaining != total:
-            lines.append(f"{name}={total}/{remaining}")
+            lines.append(f"{name_segment}={total}/{remaining}")
         else:
-            lines.append(f"{name}={total}")
+            lines.append(f"{name_segment}={total}")
     return "\n".join(lines)
 
 
@@ -143,12 +156,21 @@ def parse_prize_configuration(prize_data):
         if not stripped:
             continue
         if "=" not in stripped:
-            raise ValueError(f"Zeile {idx}: Bitte das Format 'Name=Anzahl' verwenden.")
-        name, amount_part = map(str.strip, stripped.split("=", 1))
-        if not name:
+            raise ValueError(
+                f"Zeile {idx}: Bitte das Format 'Name=Anzahl' oder 'Name | Sponsor=Anzahl' verwenden."
+            )
+        name_part, amount_part = map(str.strip, stripped.split("=", 1))
+        if not name_part:
             raise ValueError(f"Zeile {idx}: Preisname fehlt.")
         if not amount_part:
             raise ValueError(f"Zeile {idx}: Anzahl fehlt.")
+        sponsor = ""
+        if "|" in name_part:
+            name_part, sponsor_part = map(str.strip, name_part.split("|", 1))
+            sponsor = sponsor_part
+        name = name_part
+        if not name:
+            raise ValueError(f"Zeile {idx}: Preisname fehlt.")
         if "/" in amount_part:
             total_part, remaining_part = map(str.strip, amount_part.split("/", 1))
         else:
@@ -162,7 +184,13 @@ def parse_prize_configuration(prize_data):
         remaining = max(min(remaining, total), 0)
         if total == 0:
             continue
-        prizes.append({"name": name, "total": total, "remaining": remaining})
+        prize_entry = {
+            "name": name,
+            "total": total,
+            "remaining": remaining,
+            "sponsor": sponsor,
+        }
+        prizes.append(prize_entry)
     if not prizes:
         raise ValueError("Es muss mindestens ein Preis mit positiver Anzahl angegeben werden.")
     return prizes
@@ -204,12 +232,15 @@ def speichere_teilnehmer(benutzername, tag):
     with open("teilnehmer.txt", "a", encoding="utf-8") as file:
         file.write(f"{benutzername}-{tag}\n")
 
-def speichere_gewinner(benutzername, tag, preis, jahr=None):
+def speichere_gewinner(benutzername, tag, preis, jahr=None, sponsor=None):
     if DEBUG: logging.debug(f"Speichere Gewinner {benutzername} für Tag {tag} ({preis})")
     if jahr is None:
         jahr = get_local_datetime().year
+    sponsor_text = ""
+    if sponsor:
+        sponsor_text = f" - Sponsor: {str(sponsor).strip()}"
     with open("gewinner.txt", "a", encoding="utf-8") as file:
-        file.write(f"{benutzername} - Tag {tag} - {preis} - OV L11 - {jahr}\n")
+        file.write(f"{benutzername} - Tag {tag} - {preis}{sponsor_text} - OV L11 - {jahr}\n")
 
 @app.route('/', methods=['GET', 'POST'])
 def startseite():
@@ -312,8 +343,8 @@ def oeffne_tuerchen(tag):
         if DEBUG: logging.debug(f"Gewinnchance für {benutzername} am Tag {tag}: {gewinnchance}")
 
         if get_local_datetime().hour in gewinn_zeiten and random.random() < gewinnchance:
-            preis_name = reduce_prize(prizes, heute.day)
-            if not preis_name:
+            gewonnener_preis = reduce_prize(prizes, heute.day)
+            if not gewonnener_preis or not gewonnener_preis.get("name"):
                 if DEBUG: logging.debug("Preis konnte nicht reduziert werden")
                 hinweis = "Alle Preise wurden bereits vergeben."
                 if tag != 24 and prizes and prizes[0].get("remaining", 0) > 0:
@@ -323,7 +354,15 @@ def oeffne_tuerchen(tag):
                     )
                 return make_response(render_template_string(GENERIC_PAGE, content=hinweis))
             aktuelles_jahr = heute.year
-            speichere_gewinner(benutzername, tag, preis_name, jahr=aktuelles_jahr)
+            preis_name = gewonnener_preis.get("name", "")
+            sponsor_name = str(gewonnener_preis.get("sponsor", "") or "").strip()
+            speichere_gewinner(
+                benutzername,
+                tag,
+                preis_name,
+                jahr=aktuelles_jahr,
+                sponsor=sponsor_name,
+            )
             qr = qrcode.QRCode(
                 version=1,
                 error_correction=qrcode.constants.ERROR_CORRECT_L,
@@ -337,8 +376,9 @@ def oeffne_tuerchen(tag):
             os.makedirs('qr_codes', exist_ok=True)
             img.save(os.path.join('qr_codes', qr_filename))  # Speicherort korrigiert
             if DEBUG: logging.debug(f"QR-Code generiert und gespeichert: {qr_filename}")
+            sponsor_hint = f" – Sponsor: {sponsor_name}" if sponsor_name else ""
             content = Markup(
-                f"Glückwunsch! Du hast {preis_name} gewonnen. "
+                f"Glückwunsch! Du hast {preis_name}{sponsor_hint} gewonnen. "
                 f"<a href='/download_qr/{qr_filename}'>Lade deinen QR-Code herunter</a> "
                 f"oder sieh ihn dir <a href='/qr_codes/{qr_filename}'>hier an</a>."
             )
@@ -766,7 +806,18 @@ HOME_PAGE = '''
           {% if prizes %}
             <ul class="prize-list">
               {% for prize in prizes %}
-                <li>{{ prize.name }}{% if prize.total %} – insgesamt {{ prize.total }}{% endif %}{% if prize.remaining != prize.total %} (noch {{ prize.remaining }} verfügbar){% endif %}</li>
+                <li>
+                  {{ prize.name }}
+                  {% if prize.get('sponsor') %}
+                    – Sponsor: {{ prize.get('sponsor') }}
+                  {% endif %}
+                  {% if prize.total %}
+                    – insgesamt {{ prize.total }}
+                  {% endif %}
+                  {% if prize.remaining != prize.total %}
+                    (noch {{ prize.remaining }} verfügbar)
+                  {% endif %}
+                </li>
               {% endfor %}
             </ul>
           {% else %}
@@ -1216,7 +1267,7 @@ ADMIN_PAGE = '''
 
       <section class="panel">
         <h2>Preise verwalten</h2>
-        <p>Eintrag pro Zeile im Format <code>Name=Gesamt</code> oder <code>Name=Gesamt/Verfügbar</code>. Zeilen mit Anzahl 0 werden ignoriert.</p>
+        <p>Eintrag pro Zeile im Format <code>Name | Sponsor=Gesamt</code> oder <code>Name | Sponsor=Gesamt/Verfügbar</code>. Der Sponsor ist optional; Zeilen mit Anzahl 0 werden ignoriert.</p>
         <form method="post">
           <input type="hidden" name="action" value="update_prizes">
           <textarea name="prize_data" id="prize_data">{{ prize_lines }}</textarea>
@@ -1225,7 +1276,13 @@ ADMIN_PAGE = '''
         <p><strong>Gesamtpreise:</strong> {{ total_prizes }} &middot; <strong>Bereits vergeben:</strong> {{ awarded_prizes }} &middot; <strong>Noch verfügbar:</strong> {{ remaining_prizes }}</p>
         <ul>
           {% for prize in prizes %}
-            <li><strong>{{ prize.name }}</strong>: {{ prize.remaining }} von {{ prize.total }} verfügbar</li>
+            <li>
+              <strong>{{ prize.name }}</strong>
+              {% if prize.get('sponsor') %}
+                <em>(Sponsor: {{ prize.get('sponsor') }})</em>
+              {% endif %}
+              : {{ prize.remaining }} von {{ prize.total }} verfügbar
+            </li>
           {% endfor %}
         </ul>
       </section>
