@@ -464,7 +464,7 @@ HOME_PAGE = '''
       }
       header, footer {
         padding: 18px;
-        background: rgba(15, 46, 72, 0.85);
+        background: #0f2e48;
         text-align: center;
         border-bottom: 2px solid rgba(255, 255, 255, 0.2);
         box-shadow: 0 4px 15px rgba(0, 0, 0, 0.4);
@@ -474,7 +474,9 @@ HOME_PAGE = '''
         border-top: 2px solid rgba(255, 255, 255, 0.2);
         position: fixed;
         bottom: 0;
-        width: 100%;
+        left: 50%;
+        transform: translateX(-50%);
+        width: min(100%, 960px);
       }
       nav a {
         margin: 0 10px;
@@ -916,7 +918,7 @@ GENERIC_PAGE = '''
       }
       header, footer {
         padding: 18px;
-        background: rgba(15, 46, 72, 0.85);
+        background: #0f2e48;
         text-align: center;
         border-bottom: 2px solid rgba(255, 255, 255, 0.2);
         box-shadow: 0 4px 15px rgba(0, 0, 0, 0.4);
@@ -926,7 +928,9 @@ GENERIC_PAGE = '''
         border-top: 2px solid rgba(255, 255, 255, 0.2);
         position: fixed;
         bottom: 0;
-        width: 100%;
+        left: 50%;
+        transform: translateX(-50%);
+        width: min(100%, 960px);
       }
       nav a {
         margin: 0 10px;
@@ -1097,6 +1101,7 @@ ADMIN_PAGE = '''
       body {
         margin: 0;
         padding: 2rem;
+        padding-bottom: 8rem;
         background: #f5f7fa;
         font-family: 'Open Sans', Arial, sans-serif;
         color: #1b2a35;
@@ -1231,10 +1236,18 @@ ADMIN_PAGE = '''
         border: 1px solid #f5c2c7;
       }
       footer {
-        margin-top: 2rem;
         text-align: center;
-        color: #6c7a89;
+        color: #ffeecf;
         font-size: 0.9rem;
+        background: #0f2e48;
+        padding: 1rem;
+        border-top: 2px solid rgba(255, 255, 255, 0.2);
+        box-shadow: 0 -4px 15px rgba(0, 0, 0, 0.25);
+        position: fixed;
+        bottom: 0;
+        left: 50%;
+        transform: translateX(-50%);
+        width: min(100%, 960px);
       }
     </style>
   </head>
