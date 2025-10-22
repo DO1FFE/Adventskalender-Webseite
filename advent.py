@@ -10,8 +10,19 @@ import os
 import json
 import pytz
 import shutil
-from flask import Flask, request, make_response, render_template_string, send_from_directory
+import sqlite3
+from flask import (
+    Flask,
+    request,
+    make_response,
+    render_template_string,
+    send_from_directory,
+    session,
+    redirect,
+    url_for,
+)
 from markupsafe import Markup, escape
+from werkzeug.security import generate_password_hash, check_password_hash
 
 # Logging-Konfiguration
 logging.basicConfig(filename='debug.log', level=logging.DEBUG, 
@@ -25,6 +36,100 @@ DEBUG = True
 local_timezone = pytz.timezone("Europe/Berlin")
 
 app = Flask(__name__)
+app.secret_key = os.environ.get("FLASK_SECRET_KEY", "please-change-me")
+
+USER_DATABASE = "users.db"
+ADMIN_EMAIL = "do1ffe@darc.de"
+
+
+def get_db_connection():
+    connection = sqlite3.connect(USER_DATABASE)
+    connection.row_factory = sqlite3.Row
+    return connection
+
+
+def init_user_db():
+    try:
+        with get_db_connection() as connection:
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS users (
+                    id INTEGER PRIMARY KEY,
+                    email TEXT UNIQUE,
+                    display_name TEXT,
+                    password_hash TEXT
+                )
+                """
+            )
+    except sqlite3.DatabaseError as exc:
+        logging.error("Fehler bei der Initialisierung der Benutzerdatenbank: %s", exc)
+
+
+init_user_db()
+
+
+def normalise_email(email):
+    if email is None:
+        return ""
+    return email.strip().lower()
+
+
+def get_user_by_email(email):
+    email_normalised = normalise_email(email)
+    if not email_normalised:
+        return None
+    with get_db_connection() as connection:
+        cursor = connection.execute(
+            "SELECT id, email, display_name, password_hash FROM users WHERE email = ?",
+            (email_normalised,),
+        )
+        row = cursor.fetchone()
+    return dict(row) if row else None
+
+
+def get_user_by_id(user_id):
+    if user_id is None:
+        return None
+    with get_db_connection() as connection:
+        cursor = connection.execute(
+            "SELECT id, email, display_name, password_hash FROM users WHERE id = ?",
+            (user_id,),
+        )
+        row = cursor.fetchone()
+    return dict(row) if row else None
+
+
+def create_user(email, display_name, password):
+    email_normalised = normalise_email(email)
+    if not email_normalised or not password:
+        raise ValueError("E-Mail-Adresse und Passwort dürfen nicht leer sein.")
+    display_name = (display_name or email_normalised).strip()
+    password_hash = generate_password_hash(password)
+    try:
+        with get_db_connection() as connection:
+            cursor = connection.execute(
+                "INSERT INTO users (email, display_name, password_hash) VALUES (?, ?, ?)",
+                (email_normalised, display_name, password_hash),
+            )
+            user_id = cursor.lastrowid
+    except sqlite3.IntegrityError as exc:
+        raise ValueError("Diese E-Mail-Adresse ist bereits registriert.") from exc
+    return get_user_by_id(user_id)
+
+
+def verify_password(user, password):
+    if not user or not password:
+        return False
+    password_hash = user.get("password_hash")
+    if not password_hash:
+        return False
+    return check_password_hash(password_hash, password)
+
+
+def is_admin_user(user):
+    if not user:
+        return False
+    return normalise_email(user.get("email")) == normalise_email(ADMIN_EMAIL)
 
 # Initialisierung
 tuerchen_status = {tag: set() for tag in range(1, 25)}
@@ -220,19 +325,25 @@ def parse_prize_configuration(prize_data):
         raise ValueError("Es muss mindestens ein Preis mit positiver Anzahl angegeben werden.")
     return prizes
 
-def hat_gewonnen(benutzername):
-    """ Überprüft, ob der Benutzer bereits gewonnen hat. """
+def hat_gewonnen(user_identifier):
+    """Überprüft, ob der Benutzer bereits gewonnen hat."""
+    user_identifier = str(user_identifier)
     if not os.path.exists("gewinner.txt"):
         return False
     with open("gewinner.txt", "r", encoding="utf-8") as file:
-        gewinne = file.readlines()
-    return any(benutzername in gewinn for gewinn in gewinne)
+        for line in file:
+            line = line.strip()
+            if not line:
+                continue
+            prefix = line.split(" ", 1)[0]
+            prefix_id = prefix.split(":", 1)[0]
+            if prefix_id == user_identifier:
+                return True
+    return False
 
-def gewinnchance_ermitteln(benutzername, heutiges_datum, verbleibende_preise):
-    """
-    Berechnet die Gewinnchance basierend auf dem aktuellen Datum, der verfügbaren Anzahl der Preise
-    und ob der Benutzer bereits gewonnen hat.
-    """
+
+def gewinnchance_ermitteln(user_identifier, heutiges_datum, verbleibende_preise):
+    """Berechnet die Gewinnchance anhand der vorhandenen Preise und vergangener Gewinne."""
     verbleibende_tage = 25 - heutiges_datum.day
     if verbleibende_tage <= 0 or verbleibende_preise <= 0:
         return 0
@@ -240,41 +351,157 @@ def gewinnchance_ermitteln(benutzername, heutiges_datum, verbleibende_preise):
     gewinnchance = verbleibende_preise / verbleibende_tage
 
     # Reduzierte Gewinnchance für Benutzer, die bereits gewonnen haben
-    if hat_gewonnen(benutzername):
+    if hat_gewonnen(user_identifier):
         return gewinnchance * 0.1  # Beispiel: 10% der normalen Gewinnchance
 
     return gewinnchance
 
-def hat_teilgenommen(benutzername, tag):
+
+def hat_teilgenommen(user_identifier, tag):
+    user_identifier = str(user_identifier)
     if not os.path.exists("teilnehmer.txt"):
         return False
     with open("teilnehmer.txt", "r", encoding="utf-8") as file:
-        teilnahmen = file.readlines()
-    return f"{benutzername}-{tag}\n" in teilnahmen
+        for line in file:
+            cleaned = line.strip()
+            if not cleaned:
+                continue
+            try:
+                user_part, tag_part = cleaned.rsplit("-", 1)
+            except ValueError:
+                continue
+            user_key = user_part.split(":", 1)[0]
+            if user_key == user_identifier and tag_part == str(tag):
+                return True
+    return False
 
-def speichere_teilnehmer(benutzername, tag):
-    if DEBUG: logging.debug(f"Speichere Teilnehmer {benutzername} für Tag {tag}")
+
+def speichere_teilnehmer(user_identifier, display_name, tag):
+    user_identifier = str(user_identifier)
+    if DEBUG:
+        logging.debug(
+            "Speichere Teilnehmer %s (%s) für Tag %s",
+            user_identifier,
+            display_name,
+            tag,
+        )
     with open("teilnehmer.txt", "a", encoding="utf-8") as file:
-        file.write(f"{benutzername}-{tag}\n")
+        file.write(f"{user_identifier}:{display_name}-{tag}\n")
 
-def speichere_gewinner(benutzername, tag, preis, jahr=None, sponsor=None):
-    if DEBUG: logging.debug(f"Speichere Gewinner {benutzername} für Tag {tag} ({preis})")
+
+def speichere_gewinner(user_identifier, display_name, tag, preis, jahr=None, sponsor=None):
+    if DEBUG:
+        logging.debug(
+            "Speichere Gewinner %s (%s) für Tag %s (%s)",
+            user_identifier,
+            display_name,
+            tag,
+            preis,
+        )
     if jahr is None:
         jahr = get_local_datetime().year
     sponsor_text = ""
     if sponsor:
         sponsor_text = f" - Sponsor: {str(sponsor).strip()}"
     with open("gewinner.txt", "a", encoding="utf-8") as file:
-        file.write(f"{benutzername} - Tag {tag} - {preis}{sponsor_text} - OV L11 - {jahr}\n")
+        file.write(
+            f"{user_identifier}:{display_name} - Tag {tag} - {preis}{sponsor_text} - OV L11 - {jahr}\n"
+        )
 
-@app.route('/', methods=['GET', 'POST'])
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    if session.get('user_id'):
+        return redirect(url_for('startseite'))
+
+    error = ""
+    email = ""
+    message = ""
+    if request.method == 'GET' and request.args.get('registered'):
+        message = "Dein Konto wurde erfolgreich erstellt. Bitte melde dich jetzt an."
+
+    if request.method == 'POST':
+        email = (request.form.get('email') or "").strip()
+        password = request.form.get('password') or ""
+        user = get_user_by_email(email)
+        if not user or not verify_password(user, password):
+            error = "E-Mail-Adresse oder Passwort sind nicht korrekt."
+        else:
+            session['user_id'] = user['id']
+            return redirect(url_for('startseite'))
+
+    return render_template_string(
+        LOGIN_PAGE,
+        error=error,
+        email=email,
+        message=message,
+    )
+
+
+@app.route('/register', methods=['GET', 'POST'])
+def register():
+    if session.get('user_id'):
+        return redirect(url_for('startseite'))
+
+    error = ""
+    email = ""
+    display_name = ""
+
+    if request.method == 'POST':
+        display_name = (request.form.get('display_name') or "").strip()
+        email = (request.form.get('email') or "").strip()
+        password = request.form.get('password') or ""
+        confirm_password = request.form.get('confirm_password') or ""
+
+        if not display_name:
+            error = "Bitte gib einen Anzeigenamen an."
+        elif not email:
+            error = "Bitte gib eine gültige E-Mail-Adresse an."
+        elif not password:
+            error = "Bitte wähle ein Passwort."
+        elif password != confirm_password:
+            error = "Die Passwörter stimmen nicht überein."
+        elif len(password) < 8:
+            error = "Das Passwort muss mindestens 8 Zeichen lang sein."
+        else:
+            try:
+                create_user(email, display_name, password)
+            except ValueError as exc:
+                error = str(exc)
+            else:
+                return redirect(url_for('login', registered=1))
+
+    return render_template_string(
+        REGISTER_PAGE,
+        error=error,
+        email=email,
+        display_name=display_name,
+    )
+
+
+@app.route('/logout', methods=['GET'])
+def logout():
+    session.clear()
+    return redirect(url_for('login'))
+
+
+@app.route('/', methods=['GET'])
 def startseite():
-    username = request.cookies.get('username')
-    if DEBUG: logging.debug(f"Startseite aufgerufen - Username: {username}")
+    user_id = session.get('user_id')
+    if DEBUG:
+        logging.debug("Startseite aufgerufen - Session User ID: %s", user_id)
+    if not user_id:
+        return redirect(url_for('login'))
 
+    user = get_user_by_id(user_id)
+    if not user:
+        session.clear()
+        return redirect(url_for('login'))
+
+    username = user.get("display_name") or user.get("email")
     calendar_active = get_calendar_active()
     heute = get_local_datetime().date()
-    if DEBUG: logging.debug(f"Startseite - Heute: {heute}")
+    if DEBUG:
+        logging.debug("Startseite - Heute: %s", heute)
 
     prizes, max_preise, verbleibende_preise, _ = get_prize_stats()
 
@@ -302,10 +529,9 @@ def startseite():
 
     tuerchen_status.clear()
     tuerchen_status.update({tag: set() for tag in range(1, 25)})
-    if username:
-        for tag in range(1, 25):
-            if hat_teilgenommen(username, tag):
-                tuerchen_status[tag].add(username)
+    for tag in range(1, 25):
+        if hat_teilgenommen(user_id, tag):
+            tuerchen_status[tag].add(str(user_id))
 
     # Zufällige Reihenfolge der Türchen bei jedem Aufruf
     tuerchen_reihenfolge = random.sample(range(1, 25), 24)
@@ -322,20 +548,25 @@ def startseite():
         "prizes": prizes,
         "tage_bis_weihnachten": tage_bis_weihnachten,
         "calendar_active": calendar_active,
+        "user_email": user.get("email"),
+        "logout_url": url_for('logout'),
+        "is_admin": is_admin_user(user),
+        "admin_url": url_for('admin_page') if is_admin_user(user) else None,
     }
 
-    if request.method == 'POST' and not username:
-        username = request.form['username'].upper()
-        context["username"] = username
-        resp = make_response(render_template_string(HOME_PAGE, **context))
-        resp.set_cookie('username', username, max_age=2592000)
-        return resp
-    else:
-        return render_template_string(HOME_PAGE, **context)
+    return render_template_string(HOME_PAGE, **context)
 
 @app.route('/oeffne_tuerchen/<int:tag>', methods=['GET'])
 def oeffne_tuerchen(tag):
-    benutzername = request.cookies.get('username')
+    user_id = session.get('user_id')
+    if not user_id:
+        return redirect(url_for('login'))
+
+    user = get_user_by_id(user_id)
+    if not user:
+        session.clear()
+        return redirect(url_for('login'))
+
     if not get_calendar_active():
         return make_response(
             render_template_string(
@@ -343,29 +574,41 @@ def oeffne_tuerchen(tag):
                 content="Der Adventskalender ist derzeit nicht aktiv. Bitte schau später noch einmal vorbei.",
             )
         )
-    if not benutzername:
-        return make_response(render_template_string(GENERIC_PAGE, content="Bitte gib zuerst deinen Namen/Rufzeichen auf der Startseite ein."))
 
     heute = get_local_datetime().date()
-    if DEBUG: logging.debug(f"Öffne Türchen {tag} aufgerufen - Benutzer: {benutzername}, Datum: {heute}")
+    display_name = user.get("display_name") or user.get("email")
+    safe_display_name = escape(display_name)
+    if DEBUG:
+        logging.debug(
+            "Öffne Türchen %s aufgerufen - Benutzer: %s (%s), Datum: %s",
+            tag,
+            user_id,
+            display_name,
+            heute,
+        )
 
     if heute.month == 12 and heute.day == tag:
-        benutzername = benutzername.upper()
-
-        if hat_teilgenommen(benutzername, tag):
-            if DEBUG: logging.debug(f"{benutzername} hat Türchen {tag} bereits geöffnet")
+        if hat_teilgenommen(user_id, tag):
+            if DEBUG:
+                logging.debug("Benutzer %s hat Türchen %s bereits geöffnet", user_id, tag)
             return make_response(render_template_string(GENERIC_PAGE, content="Du hast dieses Türchen heute bereits geöffnet!"))
 
-        speichere_teilnehmer(benutzername, tag)
-        tuerchen_status[tag].add(benutzername)
+        speichere_teilnehmer(user_id, display_name, tag)
+        tuerchen_status[tag].add(str(user_id))
 
         prizes, max_preise, verbleibende_preise, _ = get_prize_stats()
         if verbleibende_preise <= 0:
             if DEBUG: logging.debug("Keine Preise mehr verfügbar")
             return make_response(render_template_string(GENERIC_PAGE, content="Alle Preise wurden bereits vergeben."))
 
-        gewinnchance = gewinnchance_ermitteln(benutzername, heute, verbleibende_preise)
-        if DEBUG: logging.debug(f"Gewinnchance für {benutzername} am Tag {tag}: {gewinnchance}")
+        gewinnchance = gewinnchance_ermitteln(user_id, heute, verbleibende_preise)
+        if DEBUG:
+            logging.debug(
+                "Gewinnchance für Benutzer %s am Tag %s: %s",
+                user_id,
+                tag,
+                gewinnchance,
+            )
 
         if get_local_datetime().hour in gewinn_zeiten and random.random() < gewinnchance:
             gewonnener_preis = reduce_prize(prizes, heute.day)
@@ -382,23 +625,17 @@ def oeffne_tuerchen(tag):
             preis_name = gewonnener_preis.get("name", "")
             sponsor_name = str(gewonnener_preis.get("sponsor", "") or "").strip()
             sponsor_link = str(gewonnener_preis.get("sponsor_link", "") or "").strip()
-            speichere_gewinner(
-                benutzername,
-                tag,
-                preis_name,
-                jahr=aktuelles_jahr,
-                sponsor=sponsor_name,
-            )
+            speichere_gewinner(user_id, display_name, tag, preis_name, jahr=aktuelles_jahr, sponsor=sponsor_name)
             qr = qrcode.QRCode(
                 version=1,
                 error_correction=qrcode.constants.ERROR_CORRECT_L,
                 box_size=10,
                 border=4,
             )
-            qr.add_data(f"{tag}-{benutzername}-{preis_name}-OV L11-{aktuelles_jahr}")
+            qr.add_data(f"{tag}-{display_name}-{user_id}-{preis_name}-OV L11-{aktuelles_jahr}")
             qr.make(fit=True)
             img = qr.make_image(fill_color="black", back_color="white")
-            qr_filename = f"{benutzername}_{tag}.png"  # Pfad korrigiert
+            qr_filename = f"user_{user_id}_{tag}.png"
             os.makedirs('qr_codes', exist_ok=True)
             img.save(os.path.join('qr_codes', qr_filename))  # Speicherort korrigiert
             if DEBUG: logging.debug(f"QR-Code generiert und gespeichert: {qr_filename}")
@@ -417,14 +654,20 @@ def oeffne_tuerchen(tag):
                     sponsor_hint = Markup(f" – Sponsor: {escaped_sponsor_name}")
             qr_filename_escaped = escape(qr_filename)
             content = Markup(
-                f"Glückwunsch! Du hast {prize_label}{sponsor_hint} gewonnen. "
+                f"Glückwunsch, {safe_display_name}! Du hast {prize_label}{sponsor_hint} gewonnen. "
                 f"<a href='/download_qr/{qr_filename_escaped}'>Lade deinen QR-Code herunter</a> "
                 f"oder sieh ihn dir <a href='/qr_codes/{qr_filename_escaped}'>hier an</a>."
             )
             return make_response(render_template_string(GENERIC_PAGE, content=content))
         else:
-            if DEBUG: logging.debug(f"Kein Gewinn für {benutzername} an Tag {tag}")
-            return make_response(render_template_string(GENERIC_PAGE, content="Du hattest heute leider kein Glück, versuche es morgen noch einmal!"))
+            if DEBUG:
+                logging.debug("Kein Gewinn für Benutzer %s am Tag %s", user_id, tag)
+            return make_response(
+                render_template_string(
+                    GENERIC_PAGE,
+                    content=f"Du hattest heute leider kein Glück, {safe_display_name}. Versuche es morgen noch einmal!",
+                )
+            )
     else:
         if DEBUG: logging.debug(f"Türchen {tag} kann heute noch nicht geöffnet werden")
         return make_response(render_template_string(GENERIC_PAGE, content="Dieses Türchen kann heute noch nicht geöffnet werden."))
@@ -432,10 +675,14 @@ def oeffne_tuerchen(tag):
 @app.route('/download_qr/<filename>', methods=['GET'])
 def download_qr(filename):
     if DEBUG: logging.debug(f"Download-Anfrage für QR-Code: {filename}")
+    if not session.get('user_id'):
+        return redirect(url_for('login'))
     return send_from_directory('qr_codes', filename, as_attachment=True)
 
 @app.route('/qr_codes/<filename>')
 def qr_code(filename):
+    if not session.get('user_id'):
+        return redirect(url_for('login'))
     return send_from_directory('qr_codes', filename)
 
 # Route für das Ausliefern von Event-Graphen hinzufügen
@@ -526,6 +773,13 @@ HOME_PAGE = '''
         text-align: center;
         padding: 0 24px;
       }
+      nav {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: center;
+        align-items: center;
+        gap: 12px;
+      }
       nav a {
         margin: 0 10px;
         color: #ffeecf;
@@ -535,6 +789,34 @@ HOME_PAGE = '''
       }
       nav a:hover {
         color: #ffcf5c;
+      }
+      .nav-user {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        color: #ffeecf;
+        font-weight: 600;
+      }
+      .admin-button,
+      .logout-button {
+        padding: 8px 14px;
+        border-radius: 6px;
+        border: none;
+        background: linear-gradient(135deg, #f87171, #fbbf24);
+        color: #1b1b1b;
+        font-weight: 700;
+        text-decoration: none;
+        text-transform: uppercase;
+        box-shadow: 0 4px 10px rgba(0, 0, 0, 0.25);
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
+      }
+      .admin-button:hover,
+      .logout-button:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 8px 14px rgba(0, 0, 0, 0.3);
+      }
+      .admin-button {
+        background: linear-gradient(135deg, #34d399, #22d3ee);
       }
       .preise {
         margin-top: 10px;
@@ -821,6 +1103,13 @@ HOME_PAGE = '''
       <nav>
         <a href="/">Zurück zum Adventskalender</a>
         <div class="preise">Verbleibende Preise: {{ verbleibende_preise }} von {{ max_preise }}</div>
+        <div class="nav-user">
+          <span>Angemeldet als {{ username }}</span>
+          {% if is_admin and admin_url %}
+          <a class="admin-button" href="{{ admin_url }}">Adminbereich</a>
+          {% endif %}
+          <a class="logout-button" href="{{ logout_url }}">Logout</a>
+        </div>
       </nav>
     </header>
     <main>
@@ -880,36 +1169,274 @@ HOME_PAGE = '''
           {% endif %}
         </div>
       </section>
-      {% if not username %}
-        <form method="post">
-          <label for="username">Dein vollständiger Name oder Rufzeichen:</label>
-          <input type="text" id="username" name="username" required>
-          <button type="submit">Name/Rufzeichen setzen</button>
-        </form>
-      {% else %}
-        <div class="welcome">Willkommen zurück, {{ username }}! Viel Glück beim heutigen Türchen.{% if not calendar_active %}<br><strong>Hinweis:</strong> Der Adventskalender ist momentan deaktiviert. Türchen können aktuell nicht geöffnet werden.{% endif %}</div>
-        <div class="calendar-board">
-          <div class="calendar-header">
-            <span>Dezember</span>
-            <span>{{ heute.year }}</span>
-          </div>
-          <div class="tuerchen-container">
-            {% for num in tuerchen %}
-              <a href="{% if calendar_active and not tuerchen_status[num] and num >= heute.day %}/oeffne_tuerchen/{{ num }}{% else %}#{% endif %}"
-                 class="tuerchen{% if not calendar_active or tuerchen_status[num] or num < heute.day %} disabled{% endif %}{% if num == heute.day %} current-day{% endif %}"
-                 style="--door-color: {{ tuerchen_farben[num-1] }};">
-                <span class="door-number">{{ "%02d"|format(num) }}</span>
-              </a>
-            {% endfor %}
-          </div>
+      <div class="welcome">Willkommen zurück, {{ username }}{% if user_email %} ({{ user_email }}){% endif %}! Viel Glück beim heutigen Türchen.{% if not calendar_active %}<br><strong>Hinweis:</strong> Der Adventskalender ist momentan deaktiviert. Türchen können aktuell nicht geöffnet werden.{% endif %}</div>
+      <div class="calendar-board">
+        <div class="calendar-header">
+          <span>Dezember</span>
+          <span>{{ heute.year }}</span>
         </div>
-      {% endif %}
+        <div class="tuerchen-container">
+          {% for num in tuerchen %}
+            <a href="{% if calendar_active and not tuerchen_status[num] and num >= heute.day %}/oeffne_tuerchen/{{ num }}{% else %}#{% endif %}"
+               class="tuerchen{% if not calendar_active or tuerchen_status[num] or num < heute.day %} disabled{% endif %}{% if num == heute.day %} current-day{% endif %}"
+               style="--door-color: {{ tuerchen_farben[num-1] }};">
+              <span class="door-number">{{ "%02d"|format(num) }}</span>
+            </a>
+          {% endfor %}
+        </div>
+      </div>
     </main>
     <footer>
       <div class="footer-inner">
         <p>&copy; 2023 - 2025 Erik Schauer, DO1FFE, do1ffe@darc.de</p>
       </div>
     </footer>
+  </body>
+</html>
+'''
+
+LOGIN_PAGE = '''
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Anmeldung – Adventskalender</title>
+    <style>
+      @import url('https://fonts.googleapis.com/css2?family=Mountains+of+Christmas:wght@400;700&family=Open+Sans:wght@400;600&display=swap');
+      * { box-sizing: border-box; }
+      body {
+        font-family: 'Open Sans', Arial, sans-serif;
+        margin: 0;
+        min-height: 100vh;
+        color: #f8f9fa;
+        background: linear-gradient(180deg, #0b1d2b 0%, #12324a 50%, #1c5560 100%);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 30px 15px;
+      }
+      .auth-card {
+        width: min(100%, 420px);
+        background: rgba(12, 35, 52, 0.85);
+        border-radius: 18px;
+        padding: 32px 28px;
+        box-shadow: 0 18px 40px rgba(0, 0, 0, 0.45);
+        border: 1px solid rgba(255, 255, 255, 0.2);
+      }
+      h1 {
+        font-family: 'Mountains of Christmas', 'Open Sans', cursive;
+        text-align: center;
+        margin: 0 0 18px;
+        font-size: 2.2rem;
+      }
+      form {
+        display: grid;
+        gap: 16px;
+      }
+      label {
+        font-weight: 600;
+      }
+      input[type="email"],
+      input[type="password"],
+      input[type="text"] {
+        padding: 12px 14px;
+        border-radius: 10px;
+        border: none;
+        background: rgba(255, 255, 255, 0.9);
+        color: #12324a;
+        font-size: 1rem;
+      }
+      button {
+        padding: 12px 18px;
+        border-radius: 10px;
+        border: none;
+        background: linear-gradient(135deg, #ff7b7b, #ffcf5c);
+        color: #1b1b1b;
+        font-weight: 700;
+        cursor: pointer;
+        text-transform: uppercase;
+        box-shadow: 0 6px 16px rgba(0, 0, 0, 0.35);
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
+      }
+      button:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 10px 20px rgba(0, 0, 0, 0.4);
+      }
+      .error {
+        background: rgba(220, 53, 69, 0.75);
+        border-radius: 10px;
+        padding: 12px 16px;
+        font-weight: 600;
+        text-align: center;
+      }
+      .message {
+        background: rgba(25, 135, 84, 0.75);
+        border-radius: 10px;
+        padding: 12px 16px;
+        font-weight: 600;
+        text-align: center;
+      }
+      .switch {
+        margin-top: 18px;
+        text-align: center;
+      }
+      a {
+        color: #ffcf5c;
+        font-weight: 600;
+        text-decoration: none;
+      }
+      a:hover {
+        text-decoration: underline;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="auth-card">
+      <h1>Anmeldung</h1>
+      {% if message %}
+        <div class="message">{{ message }}</div>
+      {% endif %}
+      {% if error %}
+        <div class="error">{{ error }}</div>
+      {% endif %}
+      <form method="post" novalidate>
+        <div>
+          <label for="email">E-Mail-Adresse</label>
+          <input type="email" id="email" name="email" value="{{ email or '' }}" required autocomplete="email">
+        </div>
+        <div>
+          <label for="password">Passwort</label>
+          <input type="password" id="password" name="password" required autocomplete="current-password">
+        </div>
+        <button type="submit">Login</button>
+      </form>
+      <div class="switch">
+        Noch kein Konto? <a href="/register">Jetzt registrieren</a>
+      </div>
+    </div>
+  </body>
+</html>
+'''
+
+REGISTER_PAGE = '''
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Registrierung – Adventskalender</title>
+    <style>
+      @import url('https://fonts.googleapis.com/css2?family=Mountains+of+Christmas:wght@400;700&family=Open+Sans:wght@400;600&display=swap');
+      * { box-sizing: border-box; }
+      body {
+        font-family: 'Open Sans', Arial, sans-serif;
+        margin: 0;
+        min-height: 100vh;
+        color: #f8f9fa;
+        background: linear-gradient(180deg, #0b1d2b 0%, #12324a 50%, #1c5560 100%);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 30px 15px;
+      }
+      .auth-card {
+        width: min(100%, 460px);
+        background: rgba(12, 35, 52, 0.85);
+        border-radius: 18px;
+        padding: 32px 28px;
+        box-shadow: 0 18px 40px rgba(0, 0, 0, 0.45);
+        border: 1px solid rgba(255, 255, 255, 0.2);
+      }
+      h1 {
+        font-family: 'Mountains of Christmas', 'Open Sans', cursive;
+        text-align: center;
+        margin: 0 0 18px;
+        font-size: 2.2rem;
+      }
+      form {
+        display: grid;
+        gap: 16px;
+      }
+      label {
+        font-weight: 600;
+      }
+      input[type="email"],
+      input[type="password"],
+      input[type="text"] {
+        padding: 12px 14px;
+        border-radius: 10px;
+        border: none;
+        background: rgba(255, 255, 255, 0.9);
+        color: #12324a;
+        font-size: 1rem;
+      }
+      button {
+        padding: 12px 18px;
+        border-radius: 10px;
+        border: none;
+        background: linear-gradient(135deg, #34d399, #60a5fa);
+        color: #0b1d2b;
+        font-weight: 700;
+        cursor: pointer;
+        text-transform: uppercase;
+        box-shadow: 0 6px 16px rgba(0, 0, 0, 0.35);
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
+      }
+      button:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 10px 20px rgba(0, 0, 0, 0.4);
+      }
+      .error {
+        background: rgba(220, 53, 69, 0.75);
+        border-radius: 10px;
+        padding: 12px 16px;
+        font-weight: 600;
+        text-align: center;
+      }
+      .switch {
+        margin-top: 18px;
+        text-align: center;
+      }
+      a {
+        color: #ffcf5c;
+        font-weight: 600;
+        text-decoration: none;
+      }
+      a:hover {
+        text-decoration: underline;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="auth-card">
+      <h1>Registrieren</h1>
+      {% if error %}
+        <div class="error">{{ error }}</div>
+      {% endif %}
+      <form method="post" novalidate>
+        <div>
+          <label for="display_name">Anzeigename</label>
+          <input type="text" id="display_name" name="display_name" value="{{ display_name or '' }}" placeholder="Rufzeichen oder Name" required>
+        </div>
+        <div>
+          <label for="email">E-Mail-Adresse</label>
+          <input type="email" id="email" name="email" value="{{ email or '' }}" required autocomplete="email">
+        </div>
+        <div>
+          <label for="password">Passwort</label>
+          <input type="password" id="password" name="password" required autocomplete="new-password">
+        </div>
+        <div>
+          <label for="confirm_password">Passwort bestätigen</label>
+          <input type="password" id="confirm_password" name="confirm_password" required autocomplete="new-password">
+        </div>
+        <button type="submit">Konto anlegen</button>
+      </form>
+      <div class="switch">
+        Bereits registriert? <a href="/login">Zur Anmeldung</a>
+      </div>
+    </div>
   </body>
 </html>
 '''
@@ -1065,9 +1592,20 @@ def lese_datei(path, fallback):
     return fallback
 
 
-@app.route('/admingeheim', methods=['GET', 'POST'])
+@app.route('/admin', methods=['GET', 'POST'])
 def admin_page():
-    if DEBUG: logging.debug("Admin-Seite aufgerufen")
+    user_id = session.get('user_id')
+    if not user_id:
+        return redirect(url_for('login'))
+
+    user = get_user_by_id(user_id)
+    if not is_admin_user(user):
+        if DEBUG:
+            logging.debug("Admin-Zugriff verweigert für Benutzer: %s", user_id)
+        return redirect(url_for('startseite'))
+
+    if DEBUG:
+        logging.debug("Admin-Seite aufgerufen von %s", user.get("email"))
 
     message = ""
     is_error = False
