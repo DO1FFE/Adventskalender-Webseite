@@ -774,7 +774,7 @@ def register():
 @app.route('/logout', methods=['GET'])
 def logout():
     session.clear()
-    return redirect(url_for('login'))
+    return redirect(url_for('startseite'))
 
 
 @app.route('/', methods=['GET'])
@@ -2213,7 +2213,7 @@ ADMIN_PAGE = '''
         color: #1b2a35;
       }
       main {
-        max-width: 960px;
+        max-width: 1100px;
         margin: 0 auto;
         background: #ffffff;
         padding: 2rem;
@@ -2440,7 +2440,7 @@ ADMIN_PAGE = '''
         align-items: center;
       }
       .footer-inner {
-        width: min(100%, 960px);
+        width: min(100%, 1100px);
         margin: 0 auto;
         text-align: center;
       }
