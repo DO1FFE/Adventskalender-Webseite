@@ -1056,17 +1056,17 @@ HOME_PAGE = '''
                           radial-gradient(1.4px 1.4px at 20px 170px, rgba(255,255,255,0.9) 55%, transparent 58%);
         background-size: 240px 240px, 220px 220px, 200px 200px, 260px 260px, 210px 210px;
         background-position: 30px 50px, 110px 10px, 160px 140px, 80px 200px, 0 120px;
-        animation: snowFallFar 38s linear infinite reverse;
+        animation: snowFallFar 38s linear infinite;
         opacity: 0.45;
         filter: blur(0.8px);
       }
       @keyframes snowFallNear {
         0% { background-position: 0 0, 60px 100px, 140px 40px, 40px 160px, 90px 10px; }
-        100% { background-position: -40px -220px, 20px -360px, 100px -240px, 0 -400px, 50px -220px; }
+        100% { background-position: -40px 220px, 20px 360px, 100px 240px, 0 400px, 50px 220px; }
       }
       @keyframes snowFallFar {
         0% { background-position: 30px 50px, 110px 10px, 160px 140px, 80px 200px, 0 120px; }
-        100% { background-position: -10px -290px, 150px -230px, 120px -340px, 40px -460px, 40px -330px; }
+        100% { background-position: -10px 290px, 150px 230px, 120px 340px, 40px 460px, 40px 330px; }
       }
       @keyframes snowDrift {
         from { transform: translate3d(0, 0, 0); }
@@ -2007,17 +2007,17 @@ GENERIC_PAGE = '''
                           radial-gradient(1.4px 1.4px at 20px 170px, rgba(255,255,255,0.9) 55%, transparent 58%);
         background-size: 240px 240px, 220px 220px, 200px 200px, 260px 260px, 210px 210px;
         background-position: 30px 50px, 110px 10px, 160px 140px, 80px 200px, 0 120px;
-        animation: snowFallFar 38s linear infinite reverse;
+        animation: snowFallFar 38s linear infinite;
         opacity: 0.45;
         filter: blur(0.8px);
       }
       @keyframes snowFallNear {
         0% { background-position: 0 0, 60px 100px, 140px 40px, 40px 160px, 90px 10px; }
-        100% { background-position: -40px -220px, 20px -360px, 100px -240px, 0 -400px, 50px -220px; }
+        100% { background-position: -40px 220px, 20px 360px, 100px 240px, 0 400px, 50px 220px; }
       }
       @keyframes snowFallFar {
         0% { background-position: 30px 50px, 110px 10px, 160px 140px, 80px 200px, 0 120px; }
-        100% { background-position: -10px -290px, 150px -230px, 120px -340px, 40px -460px, 40px -330px; }
+        100% { background-position: -10px 290px, 150px 230px, 120px 340px, 40px 460px, 40px 330px; }
       }
       @keyframes snowDrift {
         from { transform: translate3d(0, 0, 0); }
