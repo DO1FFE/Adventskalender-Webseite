@@ -1045,7 +1045,7 @@ HOME_PAGE = '''
         left: 0;
         bottom: 0;
         width: 100%;
-        height: 160px;
+        height: var(--footer-height, 160px);
         pointer-events: none;
         background: linear-gradient(180deg, rgba(255,255,255,0) 0%, rgba(255,255,255,0.22) 30%, rgba(255,255,255,0.85) 100%);
         box-shadow: 0 -28px 48px rgba(255, 255, 255, 0.18);
@@ -1669,6 +1669,13 @@ HOME_PAGE = '''
         const minFlakeRadius = 0.6;
         const maxFlakeRadius = 1.5;
         const snowDepositScale = 0.6;
+        let footerHeight = 0;
+
+        function updateFooterHeight() {
+          footerHeight = document.querySelector("footer")?.offsetHeight || 0;
+          document.documentElement.style.setProperty("--footer-height", `${footerHeight}px`);
+          return footerHeight;
+        }
 
         function maxHeight() {
           return height - 6;
@@ -1718,7 +1725,8 @@ HOME_PAGE = '''
           if (!viewportHeight) {
             viewportHeight = 600;
           }
-          height = viewportHeight;
+          const effectiveFooterHeight = Math.max(0, footerHeight || 0);
+          height = Math.max(viewportHeight - effectiveFooterHeight, 0);
           const devicePixelRatio = window.devicePixelRatio || 1;
           canvas.style.width = "100%";
           canvas.style.height = height + "px";
@@ -1845,10 +1853,17 @@ HOME_PAGE = '''
           }
         }
 
-        resizeCanvas();
+        function handleResize() {
+          updateFooterHeight();
+          resizeCanvas();
+        }
+
+        handleResize();
+        window.addEventListener("load", handleResize);
         window.addEventListener("resize", () => {
+          updateFooterHeight();
           clearTimeout(resizeTimer);
-          resizeTimer = setTimeout(resizeCanvas, 150);
+          resizeTimer = setTimeout(handleResize, 150);
         });
 
         let lastTime = performance.now();
