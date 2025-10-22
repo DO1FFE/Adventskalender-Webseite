@@ -1032,7 +1032,7 @@ HOME_PAGE = '''
         width: 124%;
         height: calc(100% + 380px);
         pointer-events: none;
-        will-change: transform;
+        will-change: background-position;
         background-repeat: repeat;
         z-index: 0;
       }
@@ -1044,7 +1044,7 @@ HOME_PAGE = '''
                           radial-gradient(1.8px 1.8px at 160px 40px, rgba(255,255,255,0.88) 55%, transparent 58%);
         background-size: 220px 220px, 260px 260px, 200px 200px, 240px 240px, 210px 210px;
         background-position: 0 0, 60px 100px, 140px 40px, 40px 160px, 90px 10px;
-        animation: snowFall 28s linear infinite;
+        animation: snowFallNear 28s linear infinite;
         opacity: 0.6;
         filter: blur(0.3px);
       }
@@ -1056,16 +1056,17 @@ HOME_PAGE = '''
                           radial-gradient(1.4px 1.4px at 20px 170px, rgba(255,255,255,0.9) 55%, transparent 58%);
         background-size: 240px 240px, 220px 220px, 200px 200px, 260px 260px, 210px 210px;
         background-position: 30px 50px, 110px 10px, 160px 140px, 80px 200px, 0 120px;
-        animation: snowFall 38s linear infinite reverse;
+        animation: snowFallFar 38s linear infinite reverse;
         opacity: 0.45;
         filter: blur(0.8px);
       }
-      @keyframes snowFall {
-        0% { transform: translate3d(-6%, -240px, 0); }
-        25% { transform: translate3d(4%, 20vh, 0); }
-        50% { transform: translate3d(-5%, 55vh, 0); }
-        75% { transform: translate3d(6%, 88vh, 0); }
-        100% { transform: translate3d(-6%, 120vh, 0); }
+      @keyframes snowFallNear {
+        0% { background-position: 0 0, 60px 100px, 140px 40px, 40px 160px, 90px 10px; }
+        100% { background-position: 0 220px, 60px 360px, 140px 240px, 40px 400px, 90px 220px; }
+      }
+      @keyframes snowFallFar {
+        0% { background-position: 30px 50px, 110px 10px, 160px 140px, 80px 200px, 0 120px; }
+        100% { background-position: 30px 290px, 110px 230px, 160px 340px, 80px 460px, 0 330px; }
       }
       @keyframes snowDrift {
         from { transform: translate3d(0, 0, 0); }
@@ -1982,7 +1983,7 @@ GENERIC_PAGE = '''
         width: 124%;
         height: calc(100% + 380px);
         pointer-events: none;
-        will-change: transform;
+        will-change: background-position;
         background-repeat: repeat;
         z-index: 0;
       }
@@ -1994,7 +1995,7 @@ GENERIC_PAGE = '''
                           radial-gradient(1.8px 1.8px at 160px 40px, rgba(255,255,255,0.88) 55%, transparent 58%);
         background-size: 220px 220px, 260px 260px, 200px 200px, 240px 240px, 210px 210px;
         background-position: 0 0, 60px 100px, 140px 40px, 40px 160px, 90px 10px;
-        animation: snowFall 28s linear infinite;
+        animation: snowFallNear 28s linear infinite;
         opacity: 0.6;
         filter: blur(0.3px);
       }
@@ -2006,16 +2007,17 @@ GENERIC_PAGE = '''
                           radial-gradient(1.4px 1.4px at 20px 170px, rgba(255,255,255,0.9) 55%, transparent 58%);
         background-size: 240px 240px, 220px 220px, 200px 200px, 260px 260px, 210px 210px;
         background-position: 30px 50px, 110px 10px, 160px 140px, 80px 200px, 0 120px;
-        animation: snowFall 38s linear infinite reverse;
+        animation: snowFallFar 38s linear infinite reverse;
         opacity: 0.45;
         filter: blur(0.8px);
       }
-      @keyframes snowFall {
-        0% { transform: translate3d(-6%, -240px, 0); }
-        25% { transform: translate3d(4%, 20vh, 0); }
-        50% { transform: translate3d(-5%, 55vh, 0); }
-        75% { transform: translate3d(6%, 88vh, 0); }
-        100% { transform: translate3d(-6%, 120vh, 0); }
+      @keyframes snowFallNear {
+        0% { background-position: 0 0, 60px 100px, 140px 40px, 40px 160px, 90px 10px; }
+        100% { background-position: 0 220px, 60px 360px, 140px 240px, 40px 400px, 90px 220px; }
+      }
+      @keyframes snowFallFar {
+        0% { background-position: 30px 50px, 110px 10px, 160px 140px, 80px 200px, 0 120px; }
+        100% { background-position: 30px 290px, 110px 230px, 160px 340px, 80px 460px, 0 330px; }
       }
       @keyframes snowDrift {
         from { transform: translate3d(0, 0, 0); }
