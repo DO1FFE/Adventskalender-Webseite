@@ -120,6 +120,196 @@ def get_user_by_id(user_id):
     return dict(row) if row else None
 
 
+def get_all_users():
+    with get_db_connection() as connection:
+        cursor = connection.execute(
+            """
+            SELECT id, email, display_name
+            FROM users
+            ORDER BY LOWER(email)
+            """
+        )
+        rows = cursor.fetchall()
+    return [dict(row) for row in rows]
+
+
+def update_user(user_id, email, display_name, password=None):
+    if not user_id:
+        raise ValueError("Ungültige Benutzer-ID.")
+
+    user = get_user_by_id(user_id)
+    if not user:
+        raise ValueError("Benutzer konnte nicht gefunden werden.")
+
+    email_normalised = normalise_email(email) if email else user.get("email")
+    if not email_normalised:
+        raise ValueError("Bitte gib eine gültige E-Mail-Adresse an.")
+
+    display_name = (display_name or "").strip()
+    if not display_name:
+        raise ValueError("Bitte gib einen Anzeigenamen an.")
+
+    updates = ["email = ?", "display_name = ?"]
+    parameters = [email_normalised, display_name]
+
+    if password:
+        if len(password) < 8:
+            raise ValueError("Das Passwort muss mindestens 8 Zeichen lang sein.")
+        password_hash = generate_password_hash(password)
+        updates.append("password_hash = ?")
+        parameters.append(password_hash)
+
+    parameters.append(int(user_id))
+
+    try:
+        with get_db_connection() as connection:
+            connection.execute(
+                f"UPDATE users SET {', '.join(updates)} WHERE id = ?",
+                parameters,
+            )
+    except sqlite3.IntegrityError as exc:
+        raise ValueError("Diese E-Mail-Adresse ist bereits registriert.") from exc
+    except sqlite3.DatabaseError as exc:
+        logging.error("Benutzer %s konnte nicht aktualisiert werden: %s", user_id, exc)
+        raise ValueError("Benutzerdaten konnten nicht aktualisiert werden.") from exc
+
+    return get_user_by_id(user_id)
+
+
+def release_rewards_for_user(rewards):
+    if not rewards:
+        return False
+
+    prizes = load_prizes()
+    if not prizes:
+        return False
+
+    updated = False
+
+    def build_key(name, sponsor):
+        return (
+            str(name or "").strip().lower(),
+            str(sponsor or "").strip().lower(),
+        )
+
+    lookup = {
+        build_key(prize.get("name"), prize.get("sponsor")): prize
+        for prize in prizes
+    }
+
+    for reward in rewards:
+        reward_key = build_key(reward.get("prize_name"), reward.get("sponsor"))
+        prize_entry = lookup.get(reward_key)
+
+        if prize_entry is None:
+            prize_entry = lookup.get((reward_key[0], ""))
+
+        if prize_entry is None:
+            logging.warning(
+                "Kein passender Preis zum Freigeben gefunden: %s",
+                reward.get("prize_name"),
+            )
+            continue
+
+        remaining = prize_entry.get("remaining", 0)
+        total = prize_entry.get("total", 0)
+        if remaining < total:
+            prize_entry["remaining"] = min(remaining + 1, total)
+            updated = True
+
+    if updated:
+        save_prizes(prizes)
+
+    return updated
+
+
+def cleanup_user_qr_codes(rewards):
+    if not rewards:
+        return False
+
+    qr_directory = "qr_codes"
+    removed_any = False
+
+    for reward in rewards:
+        qr_filename = (reward.get("qr_filename") or "").strip()
+        if not qr_filename:
+            continue
+        qr_path = os.path.join(qr_directory, qr_filename)
+        if os.path.exists(qr_path) and os.path.isfile(qr_path):
+            try:
+                os.remove(qr_path)
+                removed_any = True
+            except OSError as exc:
+                logging.error("QR-Code %s konnte nicht gelöscht werden: %s", qr_path, exc)
+
+    return removed_any
+
+
+def remove_user_from_winners_file(user_id):
+    winners_file = "gewinner.txt"
+    if not os.path.exists(winners_file):
+        return False
+
+    try:
+        with open(winners_file, "r", encoding="utf-8") as file:
+            lines = file.readlines()
+    except OSError as exc:
+        logging.error("Gewinnerdatei konnte nicht gelesen werden: %s", exc)
+        return False
+
+    prefix = f"{user_id}:"
+    filtered_lines = [line for line in lines if not line.strip().startswith(prefix)]
+
+    if len(filtered_lines) == len(lines):
+        return False
+
+    try:
+        with open(winners_file, "w", encoding="utf-8") as file:
+            file.writelines(filtered_lines)
+    except OSError as exc:
+        logging.error("Gewinnerdatei konnte nicht aktualisiert werden: %s", exc)
+        return False
+
+    return True
+
+
+def delete_user_and_release_rewards(user_id):
+    if not user_id:
+        raise ValueError("Ungültige Benutzer-ID.")
+
+    try:
+        user_id_int = int(user_id)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("Ungültige Benutzer-ID.") from exc
+
+    with get_db_connection() as connection:
+        cursor = connection.execute(
+            "SELECT id, email, display_name FROM users WHERE id = ?",
+            (user_id_int,),
+        )
+        row = cursor.fetchone()
+        if not row:
+            raise ValueError("Benutzer konnte nicht gefunden werden.")
+
+        rewards_cursor = connection.execute(
+            """
+            SELECT door, prize_name, sponsor, sponsor_link, qr_filename
+            FROM user_rewards
+            WHERE user_id = ?
+            """,
+            (user_id_int,),
+        )
+        rewards = [dict(item) for item in rewards_cursor.fetchall()]
+
+        connection.execute("DELETE FROM users WHERE id = ?", (user_id_int,))
+
+    release_rewards_for_user(rewards)
+    cleanup_user_qr_codes(rewards)
+    remove_user_from_winners_file(user_id_int)
+
+    return dict(row), rewards
+
+
 def create_user(email, display_name, password):
     email_normalised = normalise_email(email)
     if not email_normalised or not password:
@@ -1892,6 +2082,44 @@ def admin_page():
             set_calendar_active(new_status)
             calendar_active = new_status
             message = "Der Kalender wurde aktiviert." if new_status else "Der Kalender wurde deaktiviert."
+        elif action == 'update_user':
+            target_user_id = request.form.get('user_id')
+            email = request.form.get('email', '')
+            display_name = request.form.get('display_name', '')
+            password = request.form.get('password') or None
+
+            try:
+                updated_user = update_user(target_user_id, email, display_name, password=password)
+            except ValueError as exc:
+                is_error = True
+                message = str(exc)
+            else:
+                message = f"Benutzerdaten für {updated_user.get('email')} wurden aktualisiert."
+        elif action == 'delete_user':
+            target_user_id = request.form.get('user_id')
+
+            if not target_user_id:
+                is_error = True
+                message = "Es wurde kein Benutzer zum Löschen ausgewählt."
+            elif str(target_user_id) == str(user_id):
+                is_error = True
+                message = "Der angemeldete Benutzer kann sich nicht selbst löschen."
+            else:
+                try:
+                    deleted_user, rewards = delete_user_and_release_rewards(target_user_id)
+                except ValueError as exc:
+                    is_error = True
+                    message = str(exc)
+                else:
+                    released_count = sum(1 for reward in rewards if reward.get('prize_name'))
+                    if released_count:
+                        message = (
+                            f"Benutzer {deleted_user.get('email')} wurde gelöscht und "
+                            f"{released_count} Gewinn(e) wurden freigegeben."
+                        )
+                    else:
+                        message = f"Benutzer {deleted_user.get('email')} wurde gelöscht."
+                    prizes = load_prizes()
         elif action == 'reset_teilnehmer':
             try:
                 with open('teilnehmer.txt', 'w', encoding='utf-8'):
@@ -1939,6 +2167,7 @@ def admin_page():
 
     prizes, total_prizes, remaining_prizes, awarded_prizes = get_prize_stats(prizes)
     prize_lines = format_prize_lines(prizes)
+    registered_users = get_all_users()
 
     qr_files = []
     if os.path.exists('qr_codes'):
@@ -1960,6 +2189,7 @@ def admin_page():
         message=message,
         is_error=is_error,
         calendar_active=calendar_active,
+        registered_users=registered_users,
     )
 
 # HTML-Template für die Admin-Seite aktualisieren
@@ -2062,6 +2292,87 @@ ADMIN_PAGE = '''
       }
       button:hover {
         background: #095c6a;
+      }
+      .table-wrapper {
+        overflow-x: auto;
+      }
+      .data-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.95rem;
+      }
+      .data-table th,
+      .data-table td {
+        padding: 0.6rem 0.75rem;
+        border-bottom: 1px solid #d9e2ec;
+        text-align: left;
+        white-space: nowrap;
+      }
+      .data-table th {
+        font-weight: 700;
+        background: #e3f8ff;
+      }
+      .data-table tr:nth-child(even) td {
+        background: #f5fbff;
+      }
+      .data-table .col-email {
+        min-width: 220px;
+      }
+      .data-table .col-display-name {
+        min-width: 200px;
+      }
+      .data-table .col-password {
+        min-width: 180px;
+      }
+      .user-table input {
+        width: 100%;
+        padding: 0.45rem 0.5rem;
+        border-radius: 6px;
+        border: 1px solid #c3d0e0;
+        background: #ffffff;
+        box-sizing: border-box;
+        font-size: 0.95rem;
+      }
+      .user-table input::placeholder {
+        color: #9aa6b2;
+      }
+      .user-table td {
+        vertical-align: top;
+      }
+      .user-inline-form {
+        margin: 0;
+      }
+      .user-actions {
+        display: flex;
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 0.4rem;
+      }
+      .user-actions .user-id {
+        font-size: 0.85rem;
+        color: #486581;
+        font-weight: 600;
+      }
+      .user-actions button {
+        width: fit-content;
+      }
+      .user-actions .danger {
+        background: #c92a2a;
+      }
+      .user-actions .danger:hover {
+        background: #a51111;
+      }
+      @media (min-width: 720px) {
+        .user-actions {
+          flex-direction: row;
+          align-items: center;
+        }
+        .user-actions .user-id {
+          margin-right: 0.75rem;
+        }
+        .user-actions form + form {
+          margin-left: 0.5rem;
+        }
       }
       ul {
         padding-left: 1.2rem;
@@ -2188,6 +2499,81 @@ ADMIN_PAGE = '''
             </li>
           {% endfor %}
         </ul>
+      </section>
+
+      <section class="panel">
+        <h2>Registrierte Nutzer ({{ registered_users|length }})</h2>
+        {% if registered_users %}
+          <div class="table-wrapper">
+            <table class="data-table user-table">
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th class="col-email">E-Mail</th>
+                  <th class="col-display-name">Anzeigename</th>
+                  <th class="col-password">Neues Passwort</th>
+                  <th>Aktionen</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for registered_user in registered_users %}
+                  {% set form_id = 'user-form-' ~ registered_user.id %}
+                  <tr>
+                    <td>{{ loop.index }}</td>
+                    <td>
+                      <input
+                        form="{{ form_id }}"
+                        type="email"
+                        name="email"
+                        value="{{ registered_user.email }}"
+                        required
+                      >
+                    </td>
+                    <td>
+                      <input
+                        form="{{ form_id }}"
+                        type="text"
+                        name="display_name"
+                        value="{{ registered_user.display_name }}"
+                        required
+                      >
+                    </td>
+                    <td>
+                      <input
+                        form="{{ form_id }}"
+                        type="password"
+                        name="password"
+                        placeholder="Optional"
+                        minlength="8"
+                      >
+                    </td>
+                    <td>
+                      <div class="user-actions">
+                        <span class="user-id">ID: {{ registered_user.id }}</span>
+                        <form id="{{ form_id }}" method="post" class="user-inline-form">
+                          <input type="hidden" name="action" value="update_user">
+                          <input type="hidden" name="user_id" value="{{ registered_user.id }}">
+                          <button type="submit">Speichern</button>
+                        </form>
+                        <form
+                          method="post"
+                          class="user-inline-form"
+                          onsubmit="return confirm('Soll der Benutzer {{ registered_user.email }} wirklich gelöscht werden? Dies kann nicht rückgängig gemacht werden.');"
+                        >
+                          <input type="hidden" name="action" value="delete_user">
+                          <input type="hidden" name="user_id" value="{{ registered_user.id }}">
+                          <button type="submit" class="danger">Löschen</button>
+                        </form>
+                      </div>
+                    </td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        {% else %}
+          <p>Noch keine Nutzer registriert.</p>
+        {% endif %}
       </section>
 
       <div class="grid">
