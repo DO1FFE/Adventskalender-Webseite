@@ -11,6 +11,7 @@ import json
 import pytz
 import shutil
 import sqlite3
+from urllib.parse import urlparse
 from flask import (
     Flask,
     request,
@@ -805,21 +806,41 @@ def startseite():
     prize_names = [prize.get("name", "").strip() for prize in prizes if prize.get("total", 0) > 0]
 
     sponsors = []
-    seen_sponsors = set()
+    sponsor_groups = {}
+    sponsor_order = []
+
+    def format_sponsor_link_label(url):
+        parsed = urlparse(url)
+        host = parsed.netloc
+        if host:
+            if parsed.path and parsed.path not in {"", "/"}:
+                return f"{host}{parsed.path}"
+            return host
+        return url
+
     for prize in prizes:
         sponsor_name = str(prize.get("sponsor", "") or "").strip()
         if not sponsor_name:
             continue
         sponsor_link_raw = str(prize.get("sponsor_link", "") or "").strip()
         sponsor_link = sponsor_link_raw or None
-        key = (sponsor_name.lower(), (sponsor_link or "").lower())
-        if key in seen_sponsors:
-            continue
-        seen_sponsors.add(key)
-        sponsors.append({
-            "name": sponsor_name,
-            "link": sponsor_link,
-        })
+        normalised_name = sponsor_name.casefold()
+        group = sponsor_groups.get(normalised_name)
+        if not group:
+            group = {"name": sponsor_name, "links": []}
+            sponsor_groups[normalised_name] = group
+            sponsor_order.append(normalised_name)
+        elif not group.get("name"):
+            group["name"] = sponsor_name
+
+        if sponsor_link:
+            if sponsor_link not in {entry["url"] for entry in group["links"]}:
+                group["links"].append({
+                    "url": sponsor_link,
+                    "label": format_sponsor_link_label(sponsor_link),
+                })
+
+    sponsors = [sponsor_groups[name] for name in sponsor_order]
 
     def format_prize_phrase(names):
         filtered = [name for name in names if name]
@@ -1256,25 +1277,37 @@ HOME_PAGE = '''
         box-shadow: 0 10px 24px rgba(0, 0, 0, 0.35);
         text-align: center;
         display: flex;
+        flex-direction: column;
         align-items: center;
         justify-content: center;
-        min-height: 80px;
+        gap: 10px;
+        min-height: 110px;
         transition: transform 0.2s ease, box-shadow 0.2s ease;
       }
       .sponsor-card:hover {
         transform: translateY(-4px);
         box-shadow: 0 16px 28px rgba(0, 0, 0, 0.45);
       }
-      .sponsor-card a,
-      .sponsor-card span {
-        color: #d9f3ff;
+      .sponsor-name {
+        color: #ffcf5c;
         font-weight: 700;
-        text-decoration: none;
+        font-size: 1.05rem;
+      }
+      .sponsor-links {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 6px;
+        width: 100%;
       }
       .sponsor-card a {
         display: inline-flex;
         align-items: center;
+        justify-content: center;
         gap: 6px;
+        color: #d9f3ff;
+        font-weight: 600;
+        text-decoration: none;
       }
       .sponsor-card a::after {
         content: '↗';
@@ -1603,6 +1636,26 @@ HOME_PAGE = '''
       {% endif %}
       <h1>Adventskalender des OV L11</h1>
       <p>Stell jeden Tag ein neues Türchen frei, genieße die winterliche Vorfreude und sichere dir mit etwas Glück {% if prize_phrase %}einen unserer festlichen Preise wie {{ prize_phrase }}{% else %}einen festlichen Preis{% endif %} in unserer festlich geschmückten Clubstation!</p>
+      {% if sponsors %}
+      <section class="sponsor-highlight">
+        <h2>Unsere Sponsoren</h2>
+        <p>Ein herzliches Dankeschön an diese Unterstützer, die unsere Preise ermöglichen:</p>
+        <div class="sponsor-grid">
+          {% for sponsor in sponsors %}
+            <article class="sponsor-card">
+              <div class="sponsor-name">{{ sponsor.name }}</div>
+              {% if sponsor.links %}
+                <div class="sponsor-links">
+                  {% for link in sponsor.links %}
+                    <a href="{{ link.url }}" target="_blank" rel="noopener noreferrer">{{ link.label }}</a>
+                  {% endfor %}
+                </div>
+              {% endif %}
+            </article>
+          {% endfor %}
+        </div>
+      </section>
+      {% endif %}
       <section class="intro-grid">
         <div class="intro-card">
           <h2>Countdown bis Heiligabend</h2>
@@ -1644,23 +1697,6 @@ HOME_PAGE = '''
           {% endif %}
         </div>
       </section>
-      {% if sponsors %}
-      <section class="sponsor-highlight">
-        <h2>Unsere Sponsoren</h2>
-        <p>Ein herzliches Dankeschön an diese Unterstützer, die unsere Preise ermöglichen:</p>
-        <div class="sponsor-grid">
-          {% for sponsor in sponsors %}
-            <article class="sponsor-card">
-              {% if sponsor.link %}
-                <a href="{{ sponsor.link }}" target="_blank" rel="noopener noreferrer">{{ sponsor.name }}</a>
-              {% else %}
-                <span>{{ sponsor.name }}</span>
-              {% endif %}
-            </article>
-          {% endfor %}
-        </div>
-      </section>
-      {% endif %}
       <section class="rewards-section">
         <h2>Deine Gewinne</h2>
         {% if is_logged_in %}
