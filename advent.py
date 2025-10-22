@@ -1062,11 +1062,11 @@ HOME_PAGE = '''
       }
       @keyframes snowFallNear {
         0% { background-position: 0 0, 60px 100px, 140px 40px, 40px 160px, 90px 10px; }
-        100% { background-position: 0 220px, 60px 360px, 140px 240px, 40px 400px, 90px 220px; }
+        100% { background-position: -40px -220px, 20px -360px, 100px -240px, 0 -400px, 50px -220px; }
       }
       @keyframes snowFallFar {
         0% { background-position: 30px 50px, 110px 10px, 160px 140px, 80px 200px, 0 120px; }
-        100% { background-position: 30px 290px, 110px 230px, 160px 340px, 80px 460px, 0 330px; }
+        100% { background-position: -10px -290px, 150px -230px, 120px -340px, 40px -460px, 40px -330px; }
       }
       @keyframes snowDrift {
         from { transform: translate3d(0, 0, 0); }
@@ -2013,11 +2013,11 @@ GENERIC_PAGE = '''
       }
       @keyframes snowFallNear {
         0% { background-position: 0 0, 60px 100px, 140px 40px, 40px 160px, 90px 10px; }
-        100% { background-position: 0 220px, 60px 360px, 140px 240px, 40px 400px, 90px 220px; }
+        100% { background-position: -40px -220px, 20px -360px, 100px -240px, 0 -400px, 50px -220px; }
       }
       @keyframes snowFallFar {
         0% { background-position: 30px 50px, 110px 10px, 160px 140px, 80px 200px, 0 120px; }
-        100% { background-position: 30px 290px, 110px 230px, 160px 340px, 80px 460px, 0 330px; }
+        100% { background-position: -10px -290px, 150px -230px, 120px -340px, 40px -460px, 40px -330px; }
       }
       @keyframes snowDrift {
         from { transform: translate3d(0, 0, 0); }
