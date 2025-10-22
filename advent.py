@@ -804,6 +804,23 @@ def startseite():
 
     prize_names = [prize.get("name", "").strip() for prize in prizes if prize.get("total", 0) > 0]
 
+    sponsors = []
+    seen_sponsors = set()
+    for prize in prizes:
+        sponsor_name = str(prize.get("sponsor", "") or "").strip()
+        if not sponsor_name:
+            continue
+        sponsor_link_raw = str(prize.get("sponsor_link", "") or "").strip()
+        sponsor_link = sponsor_link_raw or None
+        key = (sponsor_name.lower(), (sponsor_link or "").lower())
+        if key in seen_sponsors:
+            continue
+        seen_sponsors.add(key)
+        sponsors.append({
+            "name": sponsor_name,
+            "link": sponsor_link,
+        })
+
     def format_prize_phrase(names):
         filtered = [name for name in names if name]
         if not filtered:
@@ -844,6 +861,7 @@ def startseite():
         "max_preise": max_preise,
         "prize_phrase": prize_phrase,
         "prizes": prizes,
+        "sponsors": sponsors,
         "tage_bis_weihnachten": tage_bis_weihnachten,
         "calendar_active": calendar_active,
         "user_email": user.get("email") if user else "",
@@ -1204,6 +1222,64 @@ HOME_PAGE = '''
         color: #ffeecf;
         font-weight: 600;
       }
+      .sponsor-highlight {
+        max-width: 960px;
+        margin: 40px auto 50px;
+        padding: 28px 30px;
+        border-radius: 20px;
+        background: linear-gradient(135deg, rgba(255, 207, 92, 0.18), rgba(52, 211, 153, 0.16));
+        border: 1px solid rgba(255, 255, 255, 0.25);
+        box-shadow: 0 18px 32px rgba(0, 0, 0, 0.35);
+      }
+      .sponsor-highlight h2 {
+        margin-top: 0;
+        margin-bottom: 18px;
+        text-align: center;
+        color: #ffcf5c;
+        font-family: 'Mountains of Christmas', 'Open Sans', cursive;
+        font-size: 2rem;
+      }
+      .sponsor-highlight p {
+        background: transparent;
+        margin-bottom: 20px;
+      }
+      .sponsor-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+        gap: 16px;
+      }
+      .sponsor-card {
+        padding: 16px 18px;
+        border-radius: 14px;
+        background: rgba(11, 29, 43, 0.82);
+        border: 1px solid rgba(255, 255, 255, 0.18);
+        box-shadow: 0 10px 24px rgba(0, 0, 0, 0.35);
+        text-align: center;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 80px;
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
+      }
+      .sponsor-card:hover {
+        transform: translateY(-4px);
+        box-shadow: 0 16px 28px rgba(0, 0, 0, 0.45);
+      }
+      .sponsor-card a,
+      .sponsor-card span {
+        color: #d9f3ff;
+        font-weight: 700;
+        text-decoration: none;
+      }
+      .sponsor-card a {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .sponsor-card a::after {
+        content: '↗';
+        font-size: 0.85em;
+      }
       .rewards-section {
         max-width: 960px;
         margin: 40px auto 50px;
@@ -1554,14 +1630,6 @@ HOME_PAGE = '''
               {% for prize in prizes %}
                 <li>
                   {{ prize.name }}
-                  {% if prize.get('sponsor') %}
-                    – Sponsor:
-                    {% if prize.get('sponsor_link') %}
-                      <a href="{{ prize.get('sponsor_link') }}" target="_blank" rel="noopener noreferrer">{{ prize.get('sponsor') }}</a>
-                    {% else %}
-                      {{ prize.get('sponsor') }}
-                    {% endif %}
-                  {% endif %}
                   {% if prize.total %}
                     – insgesamt {{ prize.total }}
                   {% endif %}
@@ -1576,6 +1644,23 @@ HOME_PAGE = '''
           {% endif %}
         </div>
       </section>
+      {% if sponsors %}
+      <section class="sponsor-highlight">
+        <h2>Unsere Sponsoren</h2>
+        <p>Ein herzliches Dankeschön an diese Unterstützer, die unsere Preise ermöglichen:</p>
+        <div class="sponsor-grid">
+          {% for sponsor in sponsors %}
+            <article class="sponsor-card">
+              {% if sponsor.link %}
+                <a href="{{ sponsor.link }}" target="_blank" rel="noopener noreferrer">{{ sponsor.name }}</a>
+              {% else %}
+                <span>{{ sponsor.name }}</span>
+              {% endif %}
+            </article>
+          {% endfor %}
+        </div>
+      </section>
+      {% endif %}
       <section class="rewards-section">
         <h2>Deine Gewinne</h2>
         {% if is_logged_in %}
