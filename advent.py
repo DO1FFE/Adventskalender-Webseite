@@ -809,7 +809,10 @@ def startseite():
     sponsor_groups = {}
     sponsor_order = []
 
-    def format_sponsor_link_label(url):
+    def format_sponsor_link_label(url, fallback_label=""):
+        fallback = str(fallback_label or "").strip()
+        if fallback:
+            return fallback
         parsed = urlparse(url)
         host = parsed.netloc
         if host:
@@ -824,21 +827,42 @@ def startseite():
             continue
         sponsor_link_raw = str(prize.get("sponsor_link", "") or "").strip()
         sponsor_link = sponsor_link_raw or None
+        product_name = str(prize.get("name", "") or "").strip()
         normalised_name = sponsor_name.casefold()
         group = sponsor_groups.get(normalised_name)
         if not group:
-            group = {"name": sponsor_name, "links": []}
+            group = {"name": sponsor_name, "links": [], "_link_keys": set()}
             sponsor_groups[normalised_name] = group
             sponsor_order.append(normalised_name)
         elif not group.get("name"):
             group["name"] = sponsor_name
 
         if sponsor_link:
-            if sponsor_link not in {entry["url"] for entry in group["links"]}:
-                group["links"].append({
-                    "url": sponsor_link,
-                    "label": format_sponsor_link_label(sponsor_link),
-                })
+            link_label = format_sponsor_link_label(sponsor_link, product_name)
+            key = (sponsor_link, link_label)
+            if key not in group.setdefault("_link_keys", set()):
+                group["_link_keys"].add(key)
+                group["links"].append(
+                    {
+                        "url": sponsor_link,
+                        "label": link_label,
+                        "product": product_name,
+                    }
+                )
+        elif product_name:
+            key = (None, product_name)
+            if key not in group.setdefault("_link_keys", set()):
+                group["_link_keys"].add(key)
+                group["links"].append(
+                    {
+                        "url": None,
+                        "label": product_name,
+                        "product": product_name,
+                    }
+                )
+
+    for group in sponsor_groups.values():
+        group.pop("_link_keys", None)
 
     sponsors = [sponsor_groups[name] for name in sponsor_order]
 
@@ -1309,6 +1333,10 @@ HOME_PAGE = '''
         font-weight: 600;
         text-decoration: none;
       }
+      .sponsor-link-label {
+        color: #d9f3ff;
+        font-weight: 600;
+      }
       .sponsor-card a::after {
         content: '↗';
         font-size: 0.85em;
@@ -1647,7 +1675,11 @@ HOME_PAGE = '''
               {% if sponsor.links %}
                 <div class="sponsor-links">
                   {% for link in sponsor.links %}
-                    <a href="{{ link.url }}" target="_blank" rel="noopener noreferrer">{{ link.label }}</a>
+                    {% if link.url %}
+                      <a href="{{ link.url }}" target="_blank" rel="noopener noreferrer">{{ link.label }}</a>
+                    {% else %}
+                      <span class="sponsor-link-label">{{ link.label }}</span>
+                    {% endif %}
                   {% endfor %}
                 </div>
               {% endif %}
