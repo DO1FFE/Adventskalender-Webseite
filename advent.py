@@ -592,15 +592,19 @@ def startseite():
     user_id = session.get('user_id')
     if DEBUG:
         logging.debug("Startseite aufgerufen - Session User ID: %s", user_id)
-    if not user_id:
-        return redirect(url_for('login'))
 
-    user = get_user_by_id(user_id)
-    if not user:
+    user = get_user_by_id(user_id) if user_id else None
+    if user_id and not user:
         session.clear()
-        return redirect(url_for('login'))
+        user_id = None
+        user = None
 
-    username = user.get("display_name") or user.get("email")
+    is_logged_in = user is not None
+    username = (
+        (user.get("display_name") or user.get("email"))
+        if user
+        else "Gast"
+    )
     calendar_active = get_calendar_active()
     heute = get_local_datetime().date()
     if DEBUG:
@@ -632,9 +636,10 @@ def startseite():
 
     tuerchen_status.clear()
     tuerchen_status.update({tag: set() for tag in range(1, 25)})
-    for tag in range(1, 25):
-        if hat_teilgenommen(user_id, tag):
-            tuerchen_status[tag].add(str(user_id))
+    if is_logged_in:
+        for tag in range(1, 25):
+            if hat_teilgenommen(user_id, tag):
+                tuerchen_status[tag].add(str(user_id))
 
     # Zufällige Reihenfolge der Türchen bei jedem Aufruf
     tuerchen_reihenfolge = random.sample(range(1, 25), 24)
@@ -651,11 +656,14 @@ def startseite():
         "prizes": prizes,
         "tage_bis_weihnachten": tage_bis_weihnachten,
         "calendar_active": calendar_active,
-        "user_email": user.get("email"),
-        "logout_url": url_for('logout'),
-        "is_admin": is_admin_user(user),
-        "admin_url": url_for('admin_page') if is_admin_user(user) else None,
-        "user_rewards": get_user_rewards(user_id),
+        "user_email": user.get("email") if user else "",
+        "logout_url": url_for('logout') if is_logged_in else None,
+        "login_url": url_for('login'),
+        "register_url": url_for('register'),
+        "is_admin": is_admin_user(user) if user else False,
+        "admin_url": url_for('admin_page') if is_logged_in and is_admin_user(user) else None,
+        "user_rewards": get_user_rewards(user_id) if is_logged_in else [],
+        "is_logged_in": is_logged_in,
     }
 
     return render_template_string(HOME_PAGE, **context)
@@ -912,7 +920,8 @@ HOME_PAGE = '''
         font-weight: 600;
       }
       .admin-button,
-      .logout-button {
+      .logout-button,
+      .auth-button {
         padding: 8px 14px;
         border-radius: 6px;
         border: none;
@@ -925,12 +934,21 @@ HOME_PAGE = '''
         transition: transform 0.2s ease, box-shadow 0.2s ease;
       }
       .admin-button:hover,
-      .logout-button:hover {
+      .logout-button:hover,
+      .auth-button:hover {
         transform: translateY(-2px);
         box-shadow: 0 8px 14px rgba(0, 0, 0, 0.3);
       }
       .admin-button {
         background: linear-gradient(135deg, #34d399, #22d3ee);
+      }
+      .auth-button {
+        background: linear-gradient(135deg, #60a5fa, #a855f7);
+        color: #0b1d2b;
+      }
+      .auth-button.register {
+        background: linear-gradient(135deg, #fbbf24, #f97316);
+        color: #1b1b1b;
       }
       .preise {
         margin-top: 10px;
@@ -1301,11 +1319,17 @@ HOME_PAGE = '''
         <a href="/">Zurück zum Adventskalender</a>
         <div class="preise">Verbleibende Preise: {{ verbleibende_preise }} von {{ max_preise }}</div>
         <div class="nav-user">
-          <span>Angemeldet als {{ username }}</span>
-          {% if is_admin and admin_url %}
-          <a class="admin-button" href="{{ admin_url }}">Adminbereich</a>
+          {% if is_logged_in %}
+            <span>Angemeldet als {{ username }}</span>
+            {% if is_admin and admin_url %}
+            <a class="admin-button" href="{{ admin_url }}">Adminbereich</a>
+            {% endif %}
+            <a class="logout-button" href="{{ logout_url }}">Logout</a>
+          {% else %}
+            <span>Nicht angemeldet</span>
+            <a class="auth-button" href="{{ login_url }}">Login</a>
+            <a class="auth-button register" href="{{ register_url }}">Registrieren</a>
           {% endif %}
-          <a class="logout-button" href="{{ logout_url }}">Logout</a>
         </div>
       </nav>
     </header>
@@ -1368,41 +1392,56 @@ HOME_PAGE = '''
       </section>
       <section class="rewards-section">
         <h2>Deine Gewinne</h2>
-        {% if user_rewards %}
-          <div class="reward-list">
-            {% for reward in user_rewards %}
-              <article class="reward-card">
-                <div class="reward-meta">
-                  <span>Türchen {{ "%02d"|format(reward.door) }}</span>
-                  {% if reward.display_date %}
-                    <span>{{ reward.display_date }}</span>
-                  {% endif %}
-                </div>
-                <strong>{{ reward.prize_name }}</strong>
-                {% if reward.sponsor %}
-                  <div class="reward-sponsor">
-                    Sponsor:
-                    {% if reward.sponsor_link %}
-                      <a href="{{ reward.sponsor_link }}" target="_blank" rel="noopener noreferrer">{{ reward.sponsor }}</a>
-                    {% else %}
-                      {{ reward.sponsor }}
+        {% if is_logged_in %}
+          {% if user_rewards %}
+            <div class="reward-list">
+              {% for reward in user_rewards %}
+                <article class="reward-card">
+                  <div class="reward-meta">
+                    <span>Türchen {{ "%02d"|format(reward.door) }}</span>
+                    {% if reward.display_date %}
+                      <span>{{ reward.display_date }}</span>
                     {% endif %}
                   </div>
-                {% endif %}
-                {% if reward.qr_filename %}
-                  <div class="reward-actions">
-                    <a href="{{ url_for('qr_code', filename=reward.qr_filename) }}" target="_blank" rel="noopener noreferrer">QR anzeigen</a>
-                    <a href="{{ url_for('download_qr', filename=reward.qr_filename) }}">QR herunterladen</a>
-                  </div>
-                {% endif %}
-              </article>
-            {% endfor %}
-          </div>
+                  <strong>{{ reward.prize_name }}</strong>
+                  {% if reward.sponsor %}
+                    <div class="reward-sponsor">
+                      Sponsor:
+                      {% if reward.sponsor_link %}
+                        <a href="{{ reward.sponsor_link }}" target="_blank" rel="noopener noreferrer">{{ reward.sponsor }}</a>
+                      {% else %}
+                        {{ reward.sponsor }}
+                      {% endif %}
+                    </div>
+                  {% endif %}
+                  {% if reward.qr_filename %}
+                    <div class="reward-actions">
+                      <a href="{{ url_for('qr_code', filename=reward.qr_filename) }}" target="_blank" rel="noopener noreferrer">QR anzeigen</a>
+                      <a href="{{ url_for('download_qr', filename=reward.qr_filename) }}">QR herunterladen</a>
+                    </div>
+                  {% endif %}
+                </article>
+              {% endfor %}
+            </div>
+          {% else %}
+            <p class="reward-empty">Du hast noch keinen Gewinn erzielt – wir drücken die Daumen für das nächste Türchen!</p>
+          {% endif %}
         {% else %}
-          <p class="reward-empty">Du hast noch keinen Gewinn erzielt – wir drücken die Daumen für das nächste Türchen!</p>
+          <p class="reward-empty">Melde dich an oder registriere dich, um deine Gewinne zu sehen und Türchen öffnen zu können.</p>
+          <div class="reward-actions">
+            <a href="{{ login_url }}">Zum Login</a>
+            <a href="{{ register_url }}">Jetzt registrieren</a>
+          </div>
         {% endif %}
       </section>
-      <div class="welcome">Willkommen zurück, {{ username }}{% if user_email %} ({{ user_email }}){% endif %}! Viel Glück beim heutigen Türchen.{% if not calendar_active %}<br><strong>Hinweis:</strong> Der Adventskalender ist momentan deaktiviert. Türchen können aktuell nicht geöffnet werden.{% endif %}</div>
+      <div class="welcome">
+        {% if is_logged_in %}
+          Willkommen zurück, {{ username }}{% if user_email %} ({{ user_email }}){% endif %}! Viel Glück beim heutigen Türchen.
+        {% else %}
+          Willkommen beim Adventskalender! <a href="{{ login_url }}">Melde dich an</a> oder <a href="{{ register_url }}">registriere dich</a>, um mitzumachen.
+        {% endif %}
+        {% if not calendar_active %}<br><strong>Hinweis:</strong> Der Adventskalender ist momentan deaktiviert. Türchen können aktuell nicht geöffnet werden.{% endif %}
+      </div>
       <div class="calendar-board">
         <div class="calendar-header">
           <span>Dezember</span>
@@ -1410,8 +1449,8 @@ HOME_PAGE = '''
         </div>
         <div class="tuerchen-container">
           {% for num in tuerchen %}
-            <a href="{% if calendar_active and not tuerchen_status[num] and num >= heute.day %}/oeffne_tuerchen/{{ num }}{% else %}#{% endif %}"
-               class="tuerchen{% if not calendar_active or tuerchen_status[num] or num < heute.day %} disabled{% endif %}{% if num == heute.day %} current-day{% endif %}"
+            <a href="{% if is_logged_in and calendar_active and not tuerchen_status[num] and num >= heute.day %}/oeffne_tuerchen/{{ num }}{% elif not is_logged_in %}{{ login_url }}{% else %}#{% endif %}"
+               class="tuerchen{% if not is_logged_in or not calendar_active or tuerchen_status[num] or num < heute.day %} disabled{% endif %}{% if num == heute.day %} current-day{% endif %}"
                style="--door-color: {{ tuerchen_farben[num-1] }};">
               <span class="door-number">{{ "%02d"|format(num) }}</span>
             </a>
