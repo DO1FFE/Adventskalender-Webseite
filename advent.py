@@ -1320,7 +1320,7 @@ HOME_PAGE = '''
       .sponsor-links {
         display: flex;
         flex-direction: column;
-        align-items: center;
+        align-items: stretch;
         gap: 6px;
         width: 100%;
       }
@@ -1328,14 +1328,22 @@ HOME_PAGE = '''
         display: inline-flex;
         align-items: center;
         justify-content: center;
+        flex-wrap: wrap;
+        width: 100%;
         gap: 6px;
         color: #d9f3ff;
         font-weight: 600;
+        text-align: center;
         text-decoration: none;
       }
       .sponsor-link-label {
+        display: inline-flex;
+        justify-content: center;
+        align-items: center;
+        width: 100%;
         color: #d9f3ff;
         font-weight: 600;
+        text-align: center;
       }
       .sponsor-card a::after {
         content: '↗';
