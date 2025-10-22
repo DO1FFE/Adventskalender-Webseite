@@ -45,6 +45,10 @@ ADMIN_EMAIL = "do1ffe@darc.de"
 def get_db_connection():
     connection = sqlite3.connect(USER_DATABASE)
     connection.row_factory = sqlite3.Row
+    try:
+        connection.execute("PRAGMA foreign_keys = ON")
+    except sqlite3.DatabaseError as exc:
+        logging.error("PRAGMA foreign_keys konnte nicht gesetzt werden: %s", exc)
     return connection
 
 
@@ -58,6 +62,23 @@ def init_user_db():
                     email TEXT UNIQUE,
                     display_name TEXT,
                     password_hash TEXT
+                )
+                """
+            )
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS user_rewards (
+                    id INTEGER PRIMARY KEY,
+                    user_id INTEGER NOT NULL,
+                    door INTEGER NOT NULL,
+                    prize_name TEXT NOT NULL,
+                    sponsor TEXT,
+                    sponsor_link TEXT,
+                    qr_filename TEXT,
+                    qr_content TEXT,
+                    created_at TEXT NOT NULL,
+                    UNIQUE(user_id, door),
+                    FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
                 )
                 """
             )
@@ -173,6 +194,88 @@ def get_calendar_active():
 def get_local_datetime():
     utc_dt = datetime.datetime.now(pytz.utc)  # aktuelle Zeit in UTC
     return utc_dt.astimezone(local_timezone)  # konvertiere in lokale Zeitzone
+
+
+def record_user_reward(user_id, door, prize_name, sponsor=None, sponsor_link=None, qr_filename=None, qr_content=None):
+    if not user_id or not prize_name:
+        return
+    created_at = get_local_datetime().isoformat()
+    try:
+        with get_db_connection() as connection:
+            connection.execute(
+                """
+                INSERT INTO user_rewards (
+                    user_id, door, prize_name, sponsor, sponsor_link, qr_filename, qr_content, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(user_id, door) DO UPDATE SET
+                    prize_name=excluded.prize_name,
+                    sponsor=excluded.sponsor,
+                    sponsor_link=excluded.sponsor_link,
+                    qr_filename=excluded.qr_filename,
+                    qr_content=excluded.qr_content,
+                    created_at=excluded.created_at
+                """,
+                (
+                    int(user_id),
+                    int(door),
+                    str(prize_name).strip(),
+                    str(sponsor or "").strip() or None,
+                    str(sponsor_link or "").strip() or None,
+                    str(qr_filename or "").strip() or None,
+                    str(qr_content or "").strip() or None,
+                    created_at,
+                ),
+            )
+    except sqlite3.DatabaseError as exc:
+        logging.error("Nutzergewinn konnte nicht gespeichert werden: %s", exc)
+
+
+def get_user_rewards(user_id):
+    if not user_id:
+        return []
+    try:
+        with get_db_connection() as connection:
+            cursor = connection.execute(
+                """
+                SELECT door, prize_name, sponsor, sponsor_link, qr_filename, qr_content, created_at
+                FROM user_rewards
+                WHERE user_id = ?
+                ORDER BY datetime(created_at) DESC, door DESC
+                """,
+                (int(user_id),),
+            )
+            rows = cursor.fetchall()
+    except sqlite3.DatabaseError as exc:
+        logging.error("Gewinne für Benutzer %s konnten nicht geladen werden: %s", user_id, exc)
+        return []
+
+    rewards = []
+    for row in rows:
+        row_data = dict(row)
+        created_at_raw = row_data.get("created_at")
+        display_date = created_at_raw
+        if created_at_raw:
+            try:
+                parsed = datetime.datetime.fromisoformat(created_at_raw)
+                if parsed.tzinfo is None:
+                    parsed = parsed.replace(tzinfo=pytz.utc).astimezone(local_timezone)
+                else:
+                    parsed = parsed.astimezone(local_timezone)
+                display_date = parsed.strftime("%d.%m.%Y %H:%M")
+            except (ValueError, TypeError):
+                display_date = created_at_raw
+        rewards.append({
+            "door": row_data.get("door"),
+            "prize_name": row_data.get("prize_name"),
+            "sponsor": row_data.get("sponsor"),
+            "sponsor_link": row_data.get("sponsor_link"),
+            "qr_filename": row_data.get("qr_filename"),
+            "qr_content": row_data.get("qr_content"),
+            "created_at": created_at_raw,
+            "display_date": display_date,
+        })
+    return rewards
+
 
 def save_prizes(prizes):
     with open(PRIZE_FILE, "w", encoding="utf-8") as file:
@@ -552,6 +655,7 @@ def startseite():
         "logout_url": url_for('logout'),
         "is_admin": is_admin_user(user),
         "admin_url": url_for('admin_page') if is_admin_user(user) else None,
+        "user_rewards": get_user_rewards(user_id),
     }
 
     return render_template_string(HOME_PAGE, **context)
@@ -626,19 +730,29 @@ def oeffne_tuerchen(tag):
             sponsor_name = str(gewonnener_preis.get("sponsor", "") or "").strip()
             sponsor_link = str(gewonnener_preis.get("sponsor_link", "") or "").strip()
             speichere_gewinner(user_id, display_name, tag, preis_name, jahr=aktuelles_jahr, sponsor=sponsor_name)
+            qr_content = f"{tag}-{display_name}-{user_id}-{preis_name}-OV L11-{aktuelles_jahr}"
             qr = qrcode.QRCode(
                 version=1,
                 error_correction=qrcode.constants.ERROR_CORRECT_L,
                 box_size=10,
                 border=4,
             )
-            qr.add_data(f"{tag}-{display_name}-{user_id}-{preis_name}-OV L11-{aktuelles_jahr}")
+            qr.add_data(qr_content)
             qr.make(fit=True)
             img = qr.make_image(fill_color="black", back_color="white")
             qr_filename = f"user_{user_id}_{tag}.png"
             os.makedirs('qr_codes', exist_ok=True)
             img.save(os.path.join('qr_codes', qr_filename))  # Speicherort korrigiert
             if DEBUG: logging.debug(f"QR-Code generiert und gespeichert: {qr_filename}")
+            record_user_reward(
+                user_id,
+                tag,
+                preis_name,
+                sponsor=sponsor_name,
+                sponsor_link=sponsor_link,
+                qr_filename=qr_filename,
+                qr_content=qr_content,
+            )
             prize_label = escape(preis_name)
             sponsor_hint = Markup("")
             if sponsor_name:
@@ -885,6 +999,89 @@ HOME_PAGE = '''
         margin-bottom: 8px;
         color: #ffeecf;
         font-weight: 600;
+      }
+      .rewards-section {
+        max-width: 960px;
+        margin: 40px auto 50px;
+        background: rgba(12, 35, 52, 0.78);
+        border-radius: 18px;
+        padding: 26px 30px;
+        box-shadow: 0 18px 36px rgba(0, 0, 0, 0.45);
+        border: 1px solid rgba(255, 255, 255, 0.18);
+      }
+      .rewards-section h2 {
+        font-family: 'Mountains of Christmas', 'Open Sans', cursive;
+        font-size: 2rem;
+        margin: 0 0 16px;
+        color: #ffcf5c;
+        text-align: center;
+      }
+      .reward-list {
+        display: grid;
+        gap: 16px;
+        grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+        margin-top: 20px;
+      }
+      .reward-card {
+        background: rgba(9, 26, 40, 0.85);
+        border-radius: 16px;
+        padding: 18px 20px;
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        box-shadow: 0 14px 28px rgba(0, 0, 0, 0.45);
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+      .reward-card strong {
+        font-size: 1.1rem;
+        color: #ffcf5c;
+      }
+      .reward-meta {
+        display: flex;
+        justify-content: space-between;
+        align-items: baseline;
+        font-size: 0.95rem;
+        color: #ffeecf;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+      .reward-meta span {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .reward-sponsor {
+        font-size: 0.9rem;
+        color: #d9f3ff;
+      }
+      .reward-actions {
+        margin-top: auto;
+        display: flex;
+        gap: 12px;
+        flex-wrap: wrap;
+      }
+      .reward-actions a {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        padding: 8px 14px;
+        border-radius: 10px;
+        background: linear-gradient(135deg, #60a5fa, #34d399);
+        color: #0b1d2b;
+        font-weight: 700;
+        text-decoration: none;
+        box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
+      }
+      .reward-actions a:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 10px 22px rgba(0, 0, 0, 0.4);
+      }
+      .reward-empty {
+        text-align: center;
+        color: #ffeecf;
+        font-weight: 600;
+        margin: 12px 0 0;
       }
       main {
         padding: 30px 20px 140px;
@@ -1168,6 +1365,42 @@ HOME_PAGE = '''
             <p class="countdown-text">Die Preise werden gerade vorbereitet. Schau bald wieder vorbei!</p>
           {% endif %}
         </div>
+      </section>
+      <section class="rewards-section">
+        <h2>Deine Gewinne</h2>
+        {% if user_rewards %}
+          <div class="reward-list">
+            {% for reward in user_rewards %}
+              <article class="reward-card">
+                <div class="reward-meta">
+                  <span>Türchen {{ "%02d"|format(reward.door) }}</span>
+                  {% if reward.display_date %}
+                    <span>{{ reward.display_date }}</span>
+                  {% endif %}
+                </div>
+                <strong>{{ reward.prize_name }}</strong>
+                {% if reward.sponsor %}
+                  <div class="reward-sponsor">
+                    Sponsor:
+                    {% if reward.sponsor_link %}
+                      <a href="{{ reward.sponsor_link }}" target="_blank" rel="noopener noreferrer">{{ reward.sponsor }}</a>
+                    {% else %}
+                      {{ reward.sponsor }}
+                    {% endif %}
+                  </div>
+                {% endif %}
+                {% if reward.qr_filename %}
+                  <div class="reward-actions">
+                    <a href="{{ url_for('qr_code', filename=reward.qr_filename) }}" target="_blank" rel="noopener noreferrer">QR anzeigen</a>
+                    <a href="{{ url_for('download_qr', filename=reward.qr_filename) }}">QR herunterladen</a>
+                  </div>
+                {% endif %}
+              </article>
+            {% endfor %}
+          </div>
+        {% else %}
+          <p class="reward-empty">Du hast noch keinen Gewinn erzielt – wir drücken die Daumen für das nächste Türchen!</p>
+        {% endif %}
       </section>
       <div class="welcome">Willkommen zurück, {{ username }}{% if user_email %} ({{ user_email }}){% endif %}! Viel Glück beim heutigen Türchen.{% if not calendar_active %}<br><strong>Hinweis:</strong> Der Adventskalender ist momentan deaktiviert. Türchen können aktuell nicht geöffnet werden.{% endif %}</div>
       <div class="calendar-board">
