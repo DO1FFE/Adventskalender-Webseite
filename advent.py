@@ -1665,7 +1665,10 @@ HOME_PAGE = '''
         let columns = 0;
         let heightField = [];
         let resizeTimer;
-        const baseFallSpeed = 1.6;
+        const baseFallSpeed = 1.3;
+        const minFlakeRadius = 0.6;
+        const maxFlakeRadius = 1.5;
+        const snowDepositScale = 0.6;
 
         function maxHeight() {
           return height - 6;
@@ -1675,7 +1678,7 @@ HOME_PAGE = '''
           return {
             x: Math.random() * width,
             y: -Math.random() * height - offset,
-            radius: 1.5 + Math.random() * 2.2,
+            radius: minFlakeRadius + Math.random() * (maxFlakeRadius - minFlakeRadius),
             speed: 0.35 + Math.random() * 1.1,
             drift: (Math.random() - 0.5) * 0.25,
             phase: Math.random() * Math.PI * 2,
@@ -1780,7 +1783,7 @@ HOME_PAGE = '''
             if (column >= 0 && column < columns) {
               const ground = height - heightField[column];
               if (flake.y + flake.radius >= ground) {
-                depositSnow(column, flake.radius * 1.4);
+                depositSnow(column, flake.radius * snowDepositScale);
                 resetFlake(flake);
                 continue;
               }
@@ -2303,7 +2306,10 @@ GENERIC_PAGE = '''
         let columns = 0;
         let heightField = [];
         let resizeTimer;
-        const baseFallSpeed = 1.6;
+        const baseFallSpeed = 1.3;
+        const minFlakeRadius = 0.6;
+        const maxFlakeRadius = 1.5;
+        const snowDepositScale = 0.6;
 
         function maxHeight() {
           return height - 6;
@@ -2313,7 +2319,7 @@ GENERIC_PAGE = '''
           return {
             x: Math.random() * width,
             y: -Math.random() * height - offset,
-            radius: 1.5 + Math.random() * 2.2,
+            radius: minFlakeRadius + Math.random() * (maxFlakeRadius - minFlakeRadius),
             speed: 0.35 + Math.random() * 1.1,
             drift: (Math.random() - 0.5) * 0.25,
             phase: Math.random() * Math.PI * 2,
@@ -2409,7 +2415,7 @@ GENERIC_PAGE = '''
             if (column >= 0 && column < columns) {
               const ground = height - heightField[column];
               if (flake.y + flake.radius >= ground) {
-                depositSnow(column, flake.radius * 1.4);
+                depositSnow(column, flake.radius * snowDepositScale);
                 resetFlake(flake);
                 continue;
               }
