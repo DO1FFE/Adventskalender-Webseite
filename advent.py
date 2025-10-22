@@ -1072,43 +1072,30 @@ HOME_PAGE = '''
         from { transform: translate3d(0, 0, 0); }
         to { transform: translate3d(-180px, 0, 0); }
       }
+      #snow-canvas {
+        position: fixed;
+        left: 0;
+        bottom: 0;
+        width: 100%;
+        height: 180px;
+        pointer-events: none;
+        z-index: 2;
+      }
       .snow-ground {
         position: fixed;
         left: 0;
         bottom: 0;
         width: 100%;
-        height: 150px;
+        height: 160px;
         pointer-events: none;
-        background: linear-gradient(180deg, rgba(255,255,255,0) 0%, rgba(255,255,255,0.25) 28%, rgba(255,255,255,0.82) 100%);
+        background: linear-gradient(180deg, rgba(255,255,255,0) 0%, rgba(255,255,255,0.22) 30%, rgba(255,255,255,0.85) 100%);
         box-shadow: 0 -28px 48px rgba(255, 255, 255, 0.18);
         overflow: hidden;
-        z-index: 2;
+        z-index: 1;
       }
       .snow-ground::before,
       .snow-ground::after {
-        content: "";
-        position: absolute;
-        left: -6%;
-        bottom: -14px;
-        width: 112%;
-        height: 120px;
-        background-repeat: repeat-x;
-      }
-      .snow-ground::before {
-        background-image: radial-gradient(52px 52px at 60px 46px, rgba(255,255,255,0.95) 60%, transparent 63%),
-                          radial-gradient(40px 40px at 150px 48px, rgba(255,255,255,0.92) 60%, transparent 63%),
-                          radial-gradient(46px 46px at 240px 52px, rgba(255,255,255,0.9) 60%, transparent 63%);
-        background-size: 190px 86px;
-        animation: snowDrift 30s linear infinite;
-        opacity: 0.85;
-      }
-      .snow-ground::after {
-        background-image: radial-gradient(60px 60px at 90px 44px, rgba(255,255,255,0.7) 58%, transparent 61%),
-                          radial-gradient(48px 48px at 210px 58px, rgba(255,255,255,0.76) 58%, transparent 61%);
-        background-size: 230px 92px;
-        animation: snowDrift 40s linear infinite reverse;
-        opacity: 0.55;
-        filter: blur(1px);
+        content: none;
       }
       header, footer {
         padding: 18px;
@@ -1698,12 +1685,214 @@ HOME_PAGE = '''
         </div>
       </div>
     </main>
+    <canvas id="snow-canvas" aria-hidden="true"></canvas>
     <div class="snow-ground" aria-hidden="true"></div>
     <footer>
       <div class="footer-inner">
         <p>&copy; 2023 - 2025 Erik Schauer, DO1FFE, do1ffe@darc.de</p>
       </div>
     </footer>
+    <script>
+      (function () {
+        const canvas = document.getElementById("snow-canvas");
+        if (!canvas || !canvas.getContext) {
+          return;
+        }
+        const ctx = canvas.getContext("2d");
+        const flakes = [];
+        const columnWidth = 4;
+        let width = 0;
+        let height = 160;
+        let columns = 0;
+        let heightField = [];
+        let resizeTimer;
+        const baseFallSpeed = 1.6;
+
+        function maxHeight() {
+          return height - 6;
+        }
+
+        function spawnFlake(offset = 0) {
+          return {
+            x: Math.random() * width,
+            y: -Math.random() * height - offset,
+            radius: 1.5 + Math.random() * 2.2,
+            speed: 0.35 + Math.random() * 1.1,
+            drift: (Math.random() - 0.5) * 0.25,
+            phase: Math.random() * Math.PI * 2,
+          };
+        }
+
+        function resetFlake(flake, offset = 0) {
+          const fresh = spawnFlake(offset);
+          flake.x = fresh.x;
+          flake.y = fresh.y;
+          flake.radius = fresh.radius;
+          flake.speed = fresh.speed;
+          flake.drift = fresh.drift;
+          flake.phase = fresh.phase;
+        }
+
+        function ensureFlakeCount() {
+          const target = Math.max(80, Math.floor(width / 10));
+          while (flakes.length < target) {
+            flakes.push(spawnFlake(flakes.length * 4));
+          }
+          while (flakes.length > target) {
+            flakes.pop();
+          }
+        }
+
+        function resizeCanvas() {
+          const previousField = heightField.slice();
+          const previousColumns = columns || 1;
+          width = window.innerWidth;
+          height = Math.min(220, Math.max(140, Math.round(window.innerHeight * 0.22)));
+          const devicePixelRatio = window.devicePixelRatio || 1;
+          canvas.style.width = "100%";
+          canvas.style.height = height + "px";
+          canvas.width = Math.floor(width * devicePixelRatio);
+          canvas.height = Math.floor(height * devicePixelRatio);
+          ctx.setTransform(1, 0, 0, 1, 0, 0);
+          ctx.scale(devicePixelRatio, devicePixelRatio);
+
+          columns = Math.max(1, Math.ceil(width / columnWidth));
+          heightField = new Array(columns).fill(0);
+          if (previousField.length) {
+            const scale = previousColumns / columns;
+            for (let i = 0; i < columns; i++) {
+              const mappedIndex = Math.floor(i * scale);
+              heightField[i] = previousField[mappedIndex] || 0;
+            }
+          }
+          ensureFlakeCount();
+          flakes.forEach((flake, index) => resetFlake(flake, index * 2));
+        }
+
+        function depositSnow(column, amount) {
+          const spread = 3;
+          for (let offset = -spread; offset <= spread; offset++) {
+            const idx = column + offset;
+            if (idx < 0 || idx >= columns) {
+              continue;
+            }
+            const falloff = 1 - Math.abs(offset) / (spread + 1);
+            heightField[idx] = Math.min(maxHeight(), heightField[idx] + amount * falloff);
+          }
+        }
+
+        function relaxHeightField() {
+          if (columns < 3) {
+            return;
+          }
+          const snapshot = heightField.slice();
+          for (let i = 1; i < columns - 1; i++) {
+            const average = (snapshot[i - 1] + snapshot[i] + snapshot[i + 1]) / 3;
+            heightField[i] = Math.min(maxHeight(), snapshot[i] * 0.8 + average * 0.2);
+          }
+        }
+
+        function updateFlakes(multiplier) {
+          if (!width || !height) {
+            return;
+          }
+          for (const flake of flakes) {
+            flake.phase += 0.015 * multiplier;
+            flake.drift += (Math.random() - 0.5) * 0.002 * multiplier;
+            flake.x += (Math.sin(flake.phase) * 0.6 + flake.drift) * multiplier;
+            flake.y += (flake.speed + baseFallSpeed) * multiplier;
+
+            if (flake.x < 0) {
+              flake.x += width;
+            } else if (flake.x >= width) {
+              flake.x -= width;
+            }
+
+            const column = Math.floor(flake.x / columnWidth);
+            if (column >= 0 && column < columns) {
+              const ground = height - heightField[column];
+              if (flake.y + flake.radius >= ground) {
+                depositSnow(column, flake.radius * 1.4);
+                resetFlake(flake);
+                continue;
+              }
+            }
+
+            if (flake.y - flake.radius > height) {
+              resetFlake(flake);
+            }
+          }
+        }
+
+        function drawScene() {
+          ctx.clearRect(0, 0, width, height);
+
+          const backgroundGradient = ctx.createLinearGradient(0, height - 120, 0, height);
+          backgroundGradient.addColorStop(0, "rgba(255, 255, 255, 0.06)");
+          backgroundGradient.addColorStop(1, "rgba(255, 255, 255, 0.18)");
+          ctx.fillStyle = backgroundGradient;
+          ctx.fillRect(0, height - 120, width, 120);
+
+          if (columns > 0) {
+            const firstHeight = height - (heightField[0] || 0);
+            ctx.beginPath();
+            ctx.moveTo(0, height);
+            ctx.lineTo(0, firstHeight);
+            for (let i = 1; i < columns; i++) {
+              const x = i * columnWidth;
+              const y = height - heightField[i];
+              ctx.lineTo(x, y);
+            }
+            const lastHeight = height - (heightField[columns - 1] || 0);
+            ctx.lineTo(width, lastHeight);
+            ctx.lineTo(width, height);
+            ctx.closePath();
+
+            const snowGradient = ctx.createLinearGradient(0, height - 100, 0, height);
+            snowGradient.addColorStop(0, "rgba(255, 255, 255, 0.82)");
+            snowGradient.addColorStop(1, "rgba(255, 255, 255, 0.96)");
+            ctx.fillStyle = snowGradient;
+            ctx.fill();
+
+            ctx.beginPath();
+            ctx.moveTo(0, firstHeight);
+            for (let i = 1; i < columns; i++) {
+              const x = i * columnWidth;
+              const y = height - heightField[i];
+              ctx.lineTo(x, y);
+            }
+            ctx.strokeStyle = "rgba(255, 255, 255, 0.7)";
+            ctx.lineWidth = 1.4;
+            ctx.stroke();
+          }
+
+          ctx.fillStyle = "rgba(255, 255, 255, 0.92)";
+          for (const flake of flakes) {
+            ctx.beginPath();
+            ctx.arc(flake.x, flake.y, flake.radius, 0, Math.PI * 2);
+            ctx.fill();
+          }
+        }
+
+        resizeCanvas();
+        window.addEventListener("resize", () => {
+          clearTimeout(resizeTimer);
+          resizeTimer = setTimeout(resizeCanvas, 150);
+        });
+
+        let lastTime = performance.now();
+        function frame(now) {
+          const delta = Math.min((now - lastTime) / 16.67, 3);
+          lastTime = now;
+          updateFlakes(delta);
+          relaxHeightField();
+          drawScene();
+          requestAnimationFrame(frame);
+        }
+
+        requestAnimationFrame(frame);
+      })();
+    </script>
   </body>
 </html>
 '''
@@ -2023,43 +2212,30 @@ GENERIC_PAGE = '''
         from { transform: translate3d(0, 0, 0); }
         to { transform: translate3d(-180px, 0, 0); }
       }
+      #snow-canvas {
+        position: fixed;
+        left: 0;
+        bottom: 0;
+        width: 100%;
+        height: 180px;
+        pointer-events: none;
+        z-index: 2;
+      }
       .snow-ground {
         position: fixed;
         left: 0;
         bottom: 0;
         width: 100%;
-        height: 150px;
+        height: 160px;
         pointer-events: none;
-        background: linear-gradient(180deg, rgba(255,255,255,0) 0%, rgba(255,255,255,0.25) 28%, rgba(255,255,255,0.82) 100%);
+        background: linear-gradient(180deg, rgba(255,255,255,0) 0%, rgba(255,255,255,0.22) 30%, rgba(255,255,255,0.85) 100%);
         box-shadow: 0 -28px 48px rgba(255, 255, 255, 0.18);
         overflow: hidden;
-        z-index: 2;
+        z-index: 1;
       }
       .snow-ground::before,
       .snow-ground::after {
-        content: "";
-        position: absolute;
-        left: -6%;
-        bottom: -14px;
-        width: 112%;
-        height: 120px;
-        background-repeat: repeat-x;
-      }
-      .snow-ground::before {
-        background-image: radial-gradient(52px 52px at 60px 46px, rgba(255,255,255,0.95) 60%, transparent 63%),
-                          radial-gradient(40px 40px at 150px 48px, rgba(255,255,255,0.92) 60%, transparent 63%),
-                          radial-gradient(46px 46px at 240px 52px, rgba(255,255,255,0.9) 60%, transparent 63%);
-        background-size: 190px 86px;
-        animation: snowDrift 30s linear infinite;
-        opacity: 0.85;
-      }
-      .snow-ground::after {
-        background-image: radial-gradient(60px 60px at 90px 44px, rgba(255,255,255,0.7) 58%, transparent 61%),
-                          radial-gradient(48px 48px at 210px 58px, rgba(255,255,255,0.76) 58%, transparent 61%);
-        background-size: 230px 92px;
-        animation: snowDrift 40s linear infinite reverse;
-        opacity: 0.55;
-        filter: blur(1px);
+        content: none;
       }
       header, footer {
         padding: 18px;
@@ -2138,12 +2314,214 @@ GENERIC_PAGE = '''
       </nav>
     </header>
     <main class="content">{{ content }}</main>
+    <canvas id="snow-canvas" aria-hidden="true"></canvas>
     <div class="snow-ground" aria-hidden="true"></div>
     <footer>
       <div class="footer-inner">
         <p>&copy; 2023 - 2025 Erik Schauer, DO1FFE, do1ffe@darc.de</p>
       </div>
     </footer>
+    <script>
+      (function () {
+        const canvas = document.getElementById("snow-canvas");
+        if (!canvas || !canvas.getContext) {
+          return;
+        }
+        const ctx = canvas.getContext("2d");
+        const flakes = [];
+        const columnWidth = 4;
+        let width = 0;
+        let height = 160;
+        let columns = 0;
+        let heightField = [];
+        let resizeTimer;
+        const baseFallSpeed = 1.6;
+
+        function maxHeight() {
+          return height - 6;
+        }
+
+        function spawnFlake(offset = 0) {
+          return {
+            x: Math.random() * width,
+            y: -Math.random() * height - offset,
+            radius: 1.5 + Math.random() * 2.2,
+            speed: 0.35 + Math.random() * 1.1,
+            drift: (Math.random() - 0.5) * 0.25,
+            phase: Math.random() * Math.PI * 2,
+          };
+        }
+
+        function resetFlake(flake, offset = 0) {
+          const fresh = spawnFlake(offset);
+          flake.x = fresh.x;
+          flake.y = fresh.y;
+          flake.radius = fresh.radius;
+          flake.speed = fresh.speed;
+          flake.drift = fresh.drift;
+          flake.phase = fresh.phase;
+        }
+
+        function ensureFlakeCount() {
+          const target = Math.max(80, Math.floor(width / 10));
+          while (flakes.length < target) {
+            flakes.push(spawnFlake(flakes.length * 4));
+          }
+          while (flakes.length > target) {
+            flakes.pop();
+          }
+        }
+
+        function resizeCanvas() {
+          const previousField = heightField.slice();
+          const previousColumns = columns || 1;
+          width = window.innerWidth;
+          height = Math.min(220, Math.max(140, Math.round(window.innerHeight * 0.22)));
+          const devicePixelRatio = window.devicePixelRatio || 1;
+          canvas.style.width = "100%";
+          canvas.style.height = height + "px";
+          canvas.width = Math.floor(width * devicePixelRatio);
+          canvas.height = Math.floor(height * devicePixelRatio);
+          ctx.setTransform(1, 0, 0, 1, 0, 0);
+          ctx.scale(devicePixelRatio, devicePixelRatio);
+
+          columns = Math.max(1, Math.ceil(width / columnWidth));
+          heightField = new Array(columns).fill(0);
+          if (previousField.length) {
+            const scale = previousColumns / columns;
+            for (let i = 0; i < columns; i++) {
+              const mappedIndex = Math.floor(i * scale);
+              heightField[i] = previousField[mappedIndex] || 0;
+            }
+          }
+          ensureFlakeCount();
+          flakes.forEach((flake, index) => resetFlake(flake, index * 2));
+        }
+
+        function depositSnow(column, amount) {
+          const spread = 3;
+          for (let offset = -spread; offset <= spread; offset++) {
+            const idx = column + offset;
+            if (idx < 0 || idx >= columns) {
+              continue;
+            }
+            const falloff = 1 - Math.abs(offset) / (spread + 1);
+            heightField[idx] = Math.min(maxHeight(), heightField[idx] + amount * falloff);
+          }
+        }
+
+        function relaxHeightField() {
+          if (columns < 3) {
+            return;
+          }
+          const snapshot = heightField.slice();
+          for (let i = 1; i < columns - 1; i++) {
+            const average = (snapshot[i - 1] + snapshot[i] + snapshot[i + 1]) / 3;
+            heightField[i] = Math.min(maxHeight(), snapshot[i] * 0.8 + average * 0.2);
+          }
+        }
+
+        function updateFlakes(multiplier) {
+          if (!width || !height) {
+            return;
+          }
+          for (const flake of flakes) {
+            flake.phase += 0.015 * multiplier;
+            flake.drift += (Math.random() - 0.5) * 0.002 * multiplier;
+            flake.x += (Math.sin(flake.phase) * 0.6 + flake.drift) * multiplier;
+            flake.y += (flake.speed + baseFallSpeed) * multiplier;
+
+            if (flake.x < 0) {
+              flake.x += width;
+            } else if (flake.x >= width) {
+              flake.x -= width;
+            }
+
+            const column = Math.floor(flake.x / columnWidth);
+            if (column >= 0 && column < columns) {
+              const ground = height - heightField[column];
+              if (flake.y + flake.radius >= ground) {
+                depositSnow(column, flake.radius * 1.4);
+                resetFlake(flake);
+                continue;
+              }
+            }
+
+            if (flake.y - flake.radius > height) {
+              resetFlake(flake);
+            }
+          }
+        }
+
+        function drawScene() {
+          ctx.clearRect(0, 0, width, height);
+
+          const backgroundGradient = ctx.createLinearGradient(0, height - 120, 0, height);
+          backgroundGradient.addColorStop(0, "rgba(255, 255, 255, 0.06)");
+          backgroundGradient.addColorStop(1, "rgba(255, 255, 255, 0.18)");
+          ctx.fillStyle = backgroundGradient;
+          ctx.fillRect(0, height - 120, width, 120);
+
+          if (columns > 0) {
+            const firstHeight = height - (heightField[0] || 0);
+            ctx.beginPath();
+            ctx.moveTo(0, height);
+            ctx.lineTo(0, firstHeight);
+            for (let i = 1; i < columns; i++) {
+              const x = i * columnWidth;
+              const y = height - heightField[i];
+              ctx.lineTo(x, y);
+            }
+            const lastHeight = height - (heightField[columns - 1] || 0);
+            ctx.lineTo(width, lastHeight);
+            ctx.lineTo(width, height);
+            ctx.closePath();
+
+            const snowGradient = ctx.createLinearGradient(0, height - 100, 0, height);
+            snowGradient.addColorStop(0, "rgba(255, 255, 255, 0.82)");
+            snowGradient.addColorStop(1, "rgba(255, 255, 255, 0.96)");
+            ctx.fillStyle = snowGradient;
+            ctx.fill();
+
+            ctx.beginPath();
+            ctx.moveTo(0, firstHeight);
+            for (let i = 1; i < columns; i++) {
+              const x = i * columnWidth;
+              const y = height - heightField[i];
+              ctx.lineTo(x, y);
+            }
+            ctx.strokeStyle = "rgba(255, 255, 255, 0.7)";
+            ctx.lineWidth = 1.4;
+            ctx.stroke();
+          }
+
+          ctx.fillStyle = "rgba(255, 255, 255, 0.92)";
+          for (const flake of flakes) {
+            ctx.beginPath();
+            ctx.arc(flake.x, flake.y, flake.radius, 0, Math.PI * 2);
+            ctx.fill();
+          }
+        }
+
+        resizeCanvas();
+        window.addEventListener("resize", () => {
+          clearTimeout(resizeTimer);
+          resizeTimer = setTimeout(resizeCanvas, 150);
+        });
+
+        let lastTime = performance.now();
+        function frame(now) {
+          const delta = Math.min((now - lastTime) / 16.67, 3);
+          lastTime = now;
+          updateFlakes(delta);
+          relaxHeightField();
+          drawScene();
+          requestAnimationFrame(frame);
+        }
+
+        requestAnimationFrame(frame);
+      })();
+    </script>
   </body>
 </html>
 '''
