@@ -1027,38 +1027,87 @@ HOME_PAGE = '''
       body::after {
         content: "";
         position: fixed;
-        top: -10%;
-        left: -10%;
-        width: 120%;
-        height: 120%;
-        background-repeat: repeat;
-        background-image: radial-gradient(2px 2px at 20px 20px, rgba(255,255,255,0.85) 50%, transparent 52%),
-                          radial-gradient(3px 3px at 70px 50px, rgba(255,255,255,0.7) 50%, transparent 52%),
-                          radial-gradient(1.5px 1.5px at 150px 120px, rgba(255,255,255,0.9) 50%, transparent 52%),
-                          radial-gradient(2.5px 2.5px at 100px 180px, rgba(255,255,255,0.8) 50%, transparent 52%),
-                          radial-gradient(2px 2px at 40px 200px, rgba(255,255,255,0.65) 50%, transparent 52%),
-                          radial-gradient(1.5px 1.5px at 180px 80px, rgba(255,255,255,0.95) 50%, transparent 52%);
-        background-size: 220px 220px, 240px 240px, 260px 260px, 210px 210px, 200px 200px, 230px 230px;
-        background-position: 0 0, 50px 80px, 120px 30px, 80px 150px, 10px 100px, 140px 60px;
-        animation: snow 18s linear infinite;
-        opacity: 0.6;
+        top: -240px;
+        left: -12%;
+        width: 124%;
+        height: calc(100% + 380px);
         pointer-events: none;
+        will-change: transform;
+        background-repeat: repeat;
+        z-index: 0;
+      }
+      body::before {
+        background-image: radial-gradient(2.2px 2.2px at 30px 30px, rgba(255,255,255,0.95) 55%, transparent 58%),
+                          radial-gradient(2.6px 2.6px at 120px 80px, rgba(255,255,255,0.75) 55%, transparent 58%),
+                          radial-gradient(1.6px 1.6px at 200px 150px, rgba(255,255,255,0.9) 55%, transparent 58%),
+                          radial-gradient(2.4px 2.4px at 80px 200px, rgba(255,255,255,0.82) 55%, transparent 58%),
+                          radial-gradient(1.8px 1.8px at 160px 40px, rgba(255,255,255,0.88) 55%, transparent 58%);
+        background-size: 220px 220px, 260px 260px, 200px 200px, 240px 240px, 210px 210px;
+        background-position: 0 0, 60px 100px, 140px 40px, 40px 160px, 90px 10px;
+        animation: snowFall 28s linear infinite;
+        opacity: 0.6;
+        filter: blur(0.3px);
       }
       body::after {
-        animation-duration: 28s;
+        background-image: radial-gradient(1.6px 1.6px at 40px 40px, rgba(255,255,255,0.85) 55%, transparent 58%),
+                          radial-gradient(2.4px 2.4px at 90px 120px, rgba(255,255,255,0.6) 55%, transparent 58%),
+                          radial-gradient(1.2px 1.2px at 150px 60px, rgba(255,255,255,0.8) 55%, transparent 58%),
+                          radial-gradient(2px 2px at 200px 180px, rgba(255,255,255,0.65) 55%, transparent 58%),
+                          radial-gradient(1.4px 1.4px at 20px 170px, rgba(255,255,255,0.9) 55%, transparent 58%);
+        background-size: 240px 240px, 220px 220px, 200px 200px, 260px 260px, 210px 210px;
+        background-position: 30px 50px, 110px 10px, 160px 140px, 80px 200px, 0 120px;
+        animation: snowFall 38s linear infinite reverse;
         opacity: 0.45;
-        background-image: radial-gradient(1.5px 1.5px at 40px 30px, rgba(255,255,255,0.75) 50%, transparent 52%),
-                          radial-gradient(2px 2px at 90px 90px, rgba(255,255,255,0.55) 50%, transparent 52%),
-                          radial-gradient(1px 1px at 130px 70px, rgba(255,255,255,0.85) 50%, transparent 52%),
-                          radial-gradient(2px 2px at 160px 160px, rgba(255,255,255,0.65) 50%, transparent 52%),
-                          radial-gradient(1.8px 1.8px at 20px 150px, rgba(255,255,255,0.7) 50%, transparent 52%),
-                          radial-gradient(1.2px 1.2px at 110px 10px, rgba(255,255,255,0.9) 50%, transparent 52%);
-        background-size: 200px 200px, 220px 220px, 240px 240px, 210px 210px, 190px 190px, 230px 230px;
-        background-position: 20px 40px, 80px 0, 140px 90px, 60px 180px, 10px 120px, 100px 30px;
+        filter: blur(0.8px);
       }
-      @keyframes snow {
-        from { transform: translate3d(-3%, -10%, 0); }
-        to { transform: translate3d(3%, 100%, 0); }
+      @keyframes snowFall {
+        0% { transform: translate3d(-6%, -240px, 0); }
+        25% { transform: translate3d(4%, 20vh, 0); }
+        50% { transform: translate3d(-5%, 55vh, 0); }
+        75% { transform: translate3d(6%, 88vh, 0); }
+        100% { transform: translate3d(-6%, 120vh, 0); }
+      }
+      @keyframes snowDrift {
+        from { transform: translate3d(0, 0, 0); }
+        to { transform: translate3d(-180px, 0, 0); }
+      }
+      .snow-ground {
+        position: fixed;
+        left: 0;
+        bottom: 0;
+        width: 100%;
+        height: 150px;
+        pointer-events: none;
+        background: linear-gradient(180deg, rgba(255,255,255,0) 0%, rgba(255,255,255,0.25) 28%, rgba(255,255,255,0.82) 100%);
+        box-shadow: 0 -28px 48px rgba(255, 255, 255, 0.18);
+        overflow: hidden;
+        z-index: 2;
+      }
+      .snow-ground::before,
+      .snow-ground::after {
+        content: "";
+        position: absolute;
+        left: -6%;
+        bottom: -14px;
+        width: 112%;
+        height: 120px;
+        background-repeat: repeat-x;
+      }
+      .snow-ground::before {
+        background-image: radial-gradient(52px 52px at 60px 46px, rgba(255,255,255,0.95) 60%, transparent 63%),
+                          radial-gradient(40px 40px at 150px 48px, rgba(255,255,255,0.92) 60%, transparent 63%),
+                          radial-gradient(46px 46px at 240px 52px, rgba(255,255,255,0.9) 60%, transparent 63%);
+        background-size: 190px 86px;
+        animation: snowDrift 30s linear infinite;
+        opacity: 0.85;
+      }
+      .snow-ground::after {
+        background-image: radial-gradient(60px 60px at 90px 44px, rgba(255,255,255,0.7) 58%, transparent 61%),
+                          radial-gradient(48px 48px at 210px 58px, rgba(255,255,255,0.76) 58%, transparent 61%);
+        background-size: 230px 92px;
+        animation: snowDrift 40s linear infinite reverse;
+        opacity: 0.55;
+        filter: blur(1px);
       }
       header, footer {
         padding: 18px;
@@ -1292,9 +1341,9 @@ HOME_PAGE = '''
         margin: 12px 0 0;
       }
       main {
-        padding: 30px 20px 140px;
+        padding: 30px 20px 160px;
         position: relative;
-        z-index: 1;
+        z-index: 3;
       }
       h1 {
         font-family: 'Mountains of Christmas', 'Open Sans', cursive;
@@ -1648,6 +1697,7 @@ HOME_PAGE = '''
         </div>
       </div>
     </main>
+    <div class="snow-ground" aria-hidden="true"></div>
     <footer>
       <div class="footer-inner">
         <p>&copy; 2023 - 2025 Erik Schauer, DO1FFE, do1ffe@darc.de</p>
@@ -1927,38 +1977,87 @@ GENERIC_PAGE = '''
       body::after {
         content: "";
         position: fixed;
-        top: -10%;
-        left: -10%;
-        width: 120%;
-        height: 120%;
-        background-repeat: repeat;
-        background-image: radial-gradient(2px 2px at 20px 20px, rgba(255,255,255,0.85) 50%, transparent 52%),
-                          radial-gradient(3px 3px at 70px 50px, rgba(255,255,255,0.7) 50%, transparent 52%),
-                          radial-gradient(1.5px 1.5px at 150px 120px, rgba(255,255,255,0.9) 50%, transparent 52%),
-                          radial-gradient(2.5px 2.5px at 100px 180px, rgba(255,255,255,0.8) 50%, transparent 52%),
-                          radial-gradient(2px 2px at 40px 200px, rgba(255,255,255,0.65) 50%, transparent 52%),
-                          radial-gradient(1.5px 1.5px at 180px 80px, rgba(255,255,255,0.95) 50%, transparent 52%);
-        background-size: 220px 220px, 240px 240px, 260px 260px, 210px 210px, 200px 200px, 230px 230px;
-        background-position: 0 0, 50px 80px, 120px 30px, 80px 150px, 10px 100px, 140px 60px;
-        animation: snow 18s linear infinite;
-        opacity: 0.6;
+        top: -240px;
+        left: -12%;
+        width: 124%;
+        height: calc(100% + 380px);
         pointer-events: none;
+        will-change: transform;
+        background-repeat: repeat;
+        z-index: 0;
+      }
+      body::before {
+        background-image: radial-gradient(2.2px 2.2px at 30px 30px, rgba(255,255,255,0.95) 55%, transparent 58%),
+                          radial-gradient(2.6px 2.6px at 120px 80px, rgba(255,255,255,0.75) 55%, transparent 58%),
+                          radial-gradient(1.6px 1.6px at 200px 150px, rgba(255,255,255,0.9) 55%, transparent 58%),
+                          radial-gradient(2.4px 2.4px at 80px 200px, rgba(255,255,255,0.82) 55%, transparent 58%),
+                          radial-gradient(1.8px 1.8px at 160px 40px, rgba(255,255,255,0.88) 55%, transparent 58%);
+        background-size: 220px 220px, 260px 260px, 200px 200px, 240px 240px, 210px 210px;
+        background-position: 0 0, 60px 100px, 140px 40px, 40px 160px, 90px 10px;
+        animation: snowFall 28s linear infinite;
+        opacity: 0.6;
+        filter: blur(0.3px);
       }
       body::after {
-        animation-duration: 28s;
+        background-image: radial-gradient(1.6px 1.6px at 40px 40px, rgba(255,255,255,0.85) 55%, transparent 58%),
+                          radial-gradient(2.4px 2.4px at 90px 120px, rgba(255,255,255,0.6) 55%, transparent 58%),
+                          radial-gradient(1.2px 1.2px at 150px 60px, rgba(255,255,255,0.8) 55%, transparent 58%),
+                          radial-gradient(2px 2px at 200px 180px, rgba(255,255,255,0.65) 55%, transparent 58%),
+                          radial-gradient(1.4px 1.4px at 20px 170px, rgba(255,255,255,0.9) 55%, transparent 58%);
+        background-size: 240px 240px, 220px 220px, 200px 200px, 260px 260px, 210px 210px;
+        background-position: 30px 50px, 110px 10px, 160px 140px, 80px 200px, 0 120px;
+        animation: snowFall 38s linear infinite reverse;
         opacity: 0.45;
-        background-image: radial-gradient(1.5px 1.5px at 40px 30px, rgba(255,255,255,0.75) 50%, transparent 52%),
-                          radial-gradient(2px 2px at 90px 90px, rgba(255,255,255,0.55) 50%, transparent 52%),
-                          radial-gradient(1px 1px at 130px 70px, rgba(255,255,255,0.85) 50%, transparent 52%),
-                          radial-gradient(2px 2px at 160px 160px, rgba(255,255,255,0.65) 50%, transparent 52%),
-                          radial-gradient(1.8px 1.8px at 20px 150px, rgba(255,255,255,0.7) 50%, transparent 52%),
-                          radial-gradient(1.2px 1.2px at 110px 10px, rgba(255,255,255,0.9) 50%, transparent 52%);
-        background-size: 200px 200px, 220px 220px, 240px 240px, 210px 210px, 190px 190px, 230px 230px;
-        background-position: 20px 40px, 80px 0, 140px 90px, 60px 180px, 10px 120px, 100px 30px;
+        filter: blur(0.8px);
       }
-      @keyframes snow {
-        from { transform: translate3d(-3%, -10%, 0); }
-        to { transform: translate3d(3%, 100%, 0); }
+      @keyframes snowFall {
+        0% { transform: translate3d(-6%, -240px, 0); }
+        25% { transform: translate3d(4%, 20vh, 0); }
+        50% { transform: translate3d(-5%, 55vh, 0); }
+        75% { transform: translate3d(6%, 88vh, 0); }
+        100% { transform: translate3d(-6%, 120vh, 0); }
+      }
+      @keyframes snowDrift {
+        from { transform: translate3d(0, 0, 0); }
+        to { transform: translate3d(-180px, 0, 0); }
+      }
+      .snow-ground {
+        position: fixed;
+        left: 0;
+        bottom: 0;
+        width: 100%;
+        height: 150px;
+        pointer-events: none;
+        background: linear-gradient(180deg, rgba(255,255,255,0) 0%, rgba(255,255,255,0.25) 28%, rgba(255,255,255,0.82) 100%);
+        box-shadow: 0 -28px 48px rgba(255, 255, 255, 0.18);
+        overflow: hidden;
+        z-index: 2;
+      }
+      .snow-ground::before,
+      .snow-ground::after {
+        content: "";
+        position: absolute;
+        left: -6%;
+        bottom: -14px;
+        width: 112%;
+        height: 120px;
+        background-repeat: repeat-x;
+      }
+      .snow-ground::before {
+        background-image: radial-gradient(52px 52px at 60px 46px, rgba(255,255,255,0.95) 60%, transparent 63%),
+                          radial-gradient(40px 40px at 150px 48px, rgba(255,255,255,0.92) 60%, transparent 63%),
+                          radial-gradient(46px 46px at 240px 52px, rgba(255,255,255,0.9) 60%, transparent 63%);
+        background-size: 190px 86px;
+        animation: snowDrift 30s linear infinite;
+        opacity: 0.85;
+      }
+      .snow-ground::after {
+        background-image: radial-gradient(60px 60px at 90px 44px, rgba(255,255,255,0.7) 58%, transparent 61%),
+                          radial-gradient(48px 48px at 210px 58px, rgba(255,255,255,0.76) 58%, transparent 61%);
+        background-size: 230px 92px;
+        animation: snowDrift 40s linear infinite reverse;
+        opacity: 0.55;
+        filter: blur(1px);
       }
       header, footer {
         padding: 18px;
@@ -1997,7 +2096,7 @@ GENERIC_PAGE = '''
       }
       .content {
         position: relative;
-        z-index: 1;
+        z-index: 3;
         max-width: 720px;
         margin: 50px auto;
         background: rgba(12, 35, 52, 0.8);
@@ -2037,6 +2136,7 @@ GENERIC_PAGE = '''
       </nav>
     </header>
     <main class="content">{{ content }}</main>
+    <div class="snow-ground" aria-hidden="true"></div>
     <footer>
       <div class="footer-inner">
         <p>&copy; 2023 - 2025 Erik Schauer, DO1FFE, do1ffe@darc.de</p>
