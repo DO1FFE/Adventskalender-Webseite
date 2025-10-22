@@ -1025,48 +1025,7 @@ HOME_PAGE = '''
       }
       body::before,
       body::after {
-        content: "";
-        position: fixed;
-        top: -240px;
-        left: -12%;
-        width: 124%;
-        height: calc(100% + 380px);
-        pointer-events: none;
-        will-change: background-position;
-        background-repeat: repeat;
-        z-index: 0;
-      }
-      body::before {
-        background-image: radial-gradient(2.2px 2.2px at 30px 30px, rgba(255,255,255,0.95) 55%, transparent 58%),
-                          radial-gradient(2.6px 2.6px at 120px 80px, rgba(255,255,255,0.75) 55%, transparent 58%),
-                          radial-gradient(1.6px 1.6px at 200px 150px, rgba(255,255,255,0.9) 55%, transparent 58%),
-                          radial-gradient(2.4px 2.4px at 80px 200px, rgba(255,255,255,0.82) 55%, transparent 58%),
-                          radial-gradient(1.8px 1.8px at 160px 40px, rgba(255,255,255,0.88) 55%, transparent 58%);
-        background-size: 220px 220px, 260px 260px, 200px 200px, 240px 240px, 210px 210px;
-        background-position: 0 0, 60px 100px, 140px 40px, 40px 160px, 90px 10px;
-        animation: snowFallNear 28s linear infinite;
-        opacity: 0.6;
-        filter: blur(0.3px);
-      }
-      body::after {
-        background-image: radial-gradient(1.6px 1.6px at 40px 40px, rgba(255,255,255,0.85) 55%, transparent 58%),
-                          radial-gradient(2.4px 2.4px at 90px 120px, rgba(255,255,255,0.6) 55%, transparent 58%),
-                          radial-gradient(1.2px 1.2px at 150px 60px, rgba(255,255,255,0.8) 55%, transparent 58%),
-                          radial-gradient(2px 2px at 200px 180px, rgba(255,255,255,0.65) 55%, transparent 58%),
-                          radial-gradient(1.4px 1.4px at 20px 170px, rgba(255,255,255,0.9) 55%, transparent 58%);
-        background-size: 240px 240px, 220px 220px, 200px 200px, 260px 260px, 210px 210px;
-        background-position: 30px 50px, 110px 10px, 160px 140px, 80px 200px, 0 120px;
-        animation: snowFallFar 38s linear infinite;
-        opacity: 0.45;
-        filter: blur(0.8px);
-      }
-      @keyframes snowFallNear {
-        0% { background-position: 0 0, 60px 100px, 140px 40px, 40px 160px, 90px 10px; }
-        100% { background-position: -40px 220px, 20px 360px, 100px 240px, 0 400px, 50px 220px; }
-      }
-      @keyframes snowFallFar {
-        0% { background-position: 30px 50px, 110px 10px, 160px 140px, 80px 200px, 0 120px; }
-        100% { background-position: -10px 290px, 150px 230px, 120px 340px, 40px 460px, 40px 330px; }
+        content: none;
       }
       @keyframes snowDrift {
         from { transform: translate3d(0, 0, 0); }
@@ -1074,10 +1033,10 @@ HOME_PAGE = '''
       }
       #snow-canvas {
         position: fixed;
+        top: 0;
         left: 0;
-        bottom: 0;
         width: 100%;
-        height: 180px;
+        height: 100vh;
         pointer-events: none;
         z-index: 2;
       }
@@ -1702,7 +1661,7 @@ HOME_PAGE = '''
         const flakes = [];
         const columnWidth = 4;
         let width = 0;
-        let height = 160;
+        let height = 0;
         let columns = 0;
         let heightField = [];
         let resizeTimer;
@@ -1746,8 +1705,17 @@ HOME_PAGE = '''
         function resizeCanvas() {
           const previousField = heightField.slice();
           const previousColumns = columns || 1;
-          width = window.innerWidth;
-          height = Math.min(220, Math.max(140, Math.round(window.innerHeight * 0.22)));
+          const doc = document.documentElement;
+          width = Math.max(window.innerWidth || 0, doc ? doc.clientWidth : 0, canvas.clientWidth || 0);
+          let viewportHeight = Math.max(
+            window.innerHeight || 0,
+            doc ? doc.clientHeight : 0,
+            canvas.clientHeight || 0
+          );
+          if (!viewportHeight) {
+            viewportHeight = 600;
+          }
+          height = viewportHeight;
           const devicePixelRatio = window.devicePixelRatio || 1;
           canvas.style.width = "100%";
           canvas.style.height = height + "px";
