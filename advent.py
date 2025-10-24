@@ -1237,7 +1237,7 @@ HOME_PAGE = '''
       }
       @media (min-width: 768px) {
         .intro-grid {
-          grid-template-columns: repeat(2, minmax(0, 1fr));
+          grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.15fr);
         }
       }
       .intro-card {
