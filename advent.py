@@ -1119,6 +1119,10 @@ HOME_PAGE = '''
         from { transform: translate3d(0, 0, 0); }
         to { transform: translate3d(-180px, 0, 0); }
       }
+      @keyframes wheelSpin {
+        from { transform: translate(-50%, -50%) rotate(0deg); }
+        to { transform: translate(-50%, -50%) rotate(360deg); }
+      }
       #snow-canvas {
         position: fixed;
         top: 0;
@@ -1127,6 +1131,113 @@ HOME_PAGE = '''
         height: 100vh;
         pointer-events: none;
         z-index: 2;
+      }
+      #snow-plow {
+        position: fixed;
+        left: 0;
+        bottom: calc(var(--footer-height, 160px) - 32px);
+        width: 200px;
+        height: 110px;
+        pointer-events: none;
+        z-index: 3;
+        opacity: 0;
+        transition: opacity 0.35s ease;
+        transform: translateX(-240px);
+        will-change: transform;
+      }
+      #snow-plow.is-active {
+        opacity: 1;
+      }
+      .snow-plow__body {
+        position: absolute;
+        bottom: 30px;
+        left: 48px;
+        width: 118px;
+        height: 54px;
+        background: linear-gradient(135deg, #fca326, #ffd86f);
+        border-radius: 12px 16px 16px 10px;
+        box-shadow: 0 6px 14px rgba(0, 0, 0, 0.35);
+      }
+      .snow-plow__cabin {
+        position: absolute;
+        top: -30px;
+        left: 16px;
+        width: 60px;
+        height: 40px;
+        background: linear-gradient(135deg, #ffe09a, #fff7d3);
+        border-radius: 12px 12px 6px 6px;
+        box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
+      }
+      .snow-plow__window {
+        position: absolute;
+        top: 8px;
+        left: 10px;
+        width: 40px;
+        height: 20px;
+        background: rgba(255, 255, 255, 0.85);
+        border-radius: 6px;
+        box-shadow: inset 0 0 6px rgba(255, 255, 255, 0.8);
+      }
+      .snow-plow__light {
+        position: absolute;
+        top: -10px;
+        right: -12px;
+        width: 18px;
+        height: 18px;
+        background: radial-gradient(circle at 30% 30%, #fff7d3 0%, #ffd86f 60%, rgba(255, 216, 111, 0) 100%);
+        border-radius: 50%;
+        box-shadow: 0 0 12px rgba(255, 216, 111, 0.8);
+      }
+      .snow-plow__blade {
+        position: absolute;
+        bottom: 20px;
+        left: -26px;
+        width: 90px;
+        height: 46px;
+        background: linear-gradient(130deg, #ffae3d, #ff8c1a);
+        border-radius: 12px;
+        transform: skewX(-18deg);
+        box-shadow: 0 10px 18px rgba(0, 0, 0, 0.4);
+        border: 2px solid rgba(255, 255, 255, 0.25);
+      }
+      .snow-plow__blade::after {
+        content: "";
+        position: absolute;
+        inset: 6px;
+        border-radius: 10px;
+        border: 1px solid rgba(255, 255, 255, 0.4);
+      }
+      .snow-plow__wheel {
+        position: absolute;
+        bottom: 0;
+        width: 42px;
+        height: 42px;
+        background: #1b2735;
+        border-radius: 50%;
+        box-shadow: inset 0 0 0 6px #ffcf5c, 0 4px 8px rgba(0, 0, 0, 0.45);
+        overflow: hidden;
+      }
+      .snow-plow__wheel--left { left: 48px; }
+      .snow-plow__wheel--right { left: 128px; }
+      .snow-plow__wheel::after {
+        content: "";
+        position: absolute;
+        inset: 10px;
+        border-radius: 50%;
+        border: 3px solid rgba(255, 207, 92, 0.8);
+      }
+      .snow-plow__wheel span {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        width: 6px;
+        height: 32px;
+        background: rgba(255, 207, 92, 0.85);
+        border-radius: 3px;
+        transform: translate(-50%, -50%);
+      }
+      #snow-plow.is-active .snow-plow__wheel span {
+        animation: wheelSpin 1s linear infinite;
       }
       .snow-ground {
         position: fixed;
@@ -1889,6 +2000,17 @@ HOME_PAGE = '''
       </div>
     </main>
     <canvas id="snow-canvas" aria-hidden="true"></canvas>
+    <div id="snow-plow" aria-hidden="true">
+      <div class="snow-plow__blade"></div>
+      <div class="snow-plow__body">
+        <div class="snow-plow__cabin">
+          <div class="snow-plow__window"></div>
+          <div class="snow-plow__light"></div>
+        </div>
+      </div>
+      <div class="snow-plow__wheel snow-plow__wheel--left"><span></span></div>
+      <div class="snow-plow__wheel snow-plow__wheel--right"><span></span></div>
+    </div>
     <div class="snow-ground" aria-hidden="true"></div>
     <footer>
       <div class="footer-inner">
@@ -1914,6 +2036,97 @@ HOME_PAGE = '''
         const maxFlakeRadius = 1.5;
         const snowDepositScale = 0.6;
         let footerHeight = 0;
+        const plowElement = document.getElementById("snow-plow");
+        const plowState = {
+          active: false,
+          x: -240,
+          width: 220,
+          speed: 0,
+          timerId: null,
+        };
+
+        function updatePlowTransform() {
+          if (plowElement) {
+            plowElement.style.transform = `translateX(${plowState.x}px)`;
+          }
+        }
+
+        function schedulePlow() {
+          if (!plowElement) {
+            return;
+          }
+          if (plowState.timerId) {
+            clearTimeout(plowState.timerId);
+          }
+          const delay = 120000 + Math.random() * 180000;
+          plowState.timerId = setTimeout(() => {
+            plowState.timerId = null;
+            startPlow();
+          }, delay);
+        }
+
+        function startPlow() {
+          if (!plowElement || plowState.active || !width) {
+            if (!plowState.active) {
+              schedulePlow();
+            }
+            return;
+          }
+          const rect = plowElement.getBoundingClientRect();
+          if (rect.width) {
+            plowState.width = rect.width;
+          }
+          plowState.active = true;
+          plowState.x = -plowState.width - 20;
+          plowState.speed = Math.max(width / 6, 160);
+          plowElement.classList.add("is-active");
+          updatePlowTransform();
+        }
+
+        function finishPlow() {
+          if (!plowElement) {
+            return;
+          }
+          plowState.active = false;
+          plowElement.classList.remove("is-active");
+          plowState.x = -plowState.width - 20;
+          updatePlowTransform();
+          schedulePlow();
+        }
+
+        function clearSnowUnderPlow(xPosition, plowWidth) {
+          if (!columns || !heightField.length) {
+            return;
+          }
+          const start = Math.floor(xPosition / columnWidth);
+          const end = Math.ceil((xPosition + plowWidth) / columnWidth);
+          if (start > columns || end < 0) {
+            return;
+          }
+          const clampedStart = Math.max(0, start);
+          const clampedEnd = Math.min(columns - 1, end);
+          const center = (clampedStart + clampedEnd) / 2;
+          const halfWidth = Math.max(1, (clampedEnd - clampedStart) / 2);
+          for (let i = clampedStart; i <= clampedEnd; i++) {
+            const distance = Math.abs(i - center);
+            const factor = 1 - Math.min(1, distance / halfWidth);
+            const removal = Math.max(heightField[i] * (0.6 + 0.35 * factor), maxHeight() * 0.2 * factor);
+            heightField[i] = Math.max(0, heightField[i] - removal);
+          }
+        }
+
+        function updatePlow(delta) {
+          if (!plowElement || !plowState.active) {
+            return;
+          }
+          const seconds = delta * (1 / 60);
+          plowState.x += plowState.speed * seconds;
+          clearSnowUnderPlow(plowState.x + 20, plowState.width - 40);
+          updatePlowTransform();
+          if (plowState.x > width + plowState.width) {
+            finishPlow();
+          }
+        }
 
         function updateFooterHeight() {
           footerHeight = document.querySelector("footer")?.offsetHeight || 0;
@@ -1989,6 +2202,14 @@ HOME_PAGE = '''
             }
           }
           ensureFlakeCount();
+          if (plowElement && !plowState.active) {
+            const rect = plowElement.getBoundingClientRect();
+            if (rect.width) {
+              plowState.width = rect.width;
+            }
+            plowState.x = -plowState.width - 20;
+            updatePlowTransform();
+          }
           flakes.forEach((flake, index) => resetFlake(flake, index * 2));
         }
 
@@ -2103,6 +2324,15 @@ HOME_PAGE = '''
         }
 
         handleResize();
+        if (plowElement) {
+          const rect = plowElement.getBoundingClientRect();
+          if (rect.width) {
+            plowState.width = rect.width;
+          }
+          plowState.x = -plowState.width - 20;
+          updatePlowTransform();
+          schedulePlow();
+        }
         window.addEventListener("load", handleResize);
         window.addEventListener("resize", () => {
           updateFooterHeight();
@@ -2116,6 +2346,7 @@ HOME_PAGE = '''
           lastTime = now;
           updateFlakes(delta);
           relaxHeightField();
+          updatePlow(delta);
           drawScene();
           requestAnimationFrame(frame);
         }
