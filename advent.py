@@ -1286,12 +1286,20 @@ HOME_PAGE = '''
         list-style: none;
         padding: 0;
         margin: 0;
-        overflow-x: auto;
+        display: flex;
+        gap: 12px;
+        justify-content: center;
+        align-items: stretch;
       }
       .prize-list li {
-        margin-bottom: 8px;
+        flex: 1 1 0;
+        min-width: 0;
+        padding: 10px 16px;
+        border-radius: 12px;
+        background: rgba(17, 45, 68, 0.75);
         color: #ffeecf;
         font-weight: 600;
+        text-align: center;
         white-space: nowrap;
       }
       .sponsor-highlight {
