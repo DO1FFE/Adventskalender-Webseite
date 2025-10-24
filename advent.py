@@ -560,6 +560,41 @@ def format_prize_lines(prizes):
     return "\n".join(lines)
 
 
+def extract_sponsor_details(sponsor_part):
+    """Split a sponsor entry into name and optional link.
+
+    The sponsor segment supports the syntax "Sponsor" or
+    "Sponsor (https://link)", where the URL may itself contain parentheses
+    or query parameters. The function searches from the end of the string to
+    find a trailing "(http...)" segment and separates it from the sponsor
+    name when present.
+    """
+
+    text = str(sponsor_part or "").strip()
+    if not text:
+        return "", ""
+
+    sponsor_name = text
+    sponsor_link = ""
+    stripped = text.rstrip()
+    search_position = len(stripped)
+
+    while search_position > 0:
+        start_index = stripped.rfind("(", 0, search_position)
+        if start_index == -1:
+            break
+        remainder = stripped[start_index + 1 :].strip()
+        if remainder.endswith(")"):
+            url_candidate = remainder[:-1].strip()
+            if url_candidate and url_candidate.lower().startswith(("http://", "https://")):
+                sponsor_name = stripped[:start_index].rstrip()
+                sponsor_link = url_candidate
+                break
+        search_position = start_index
+
+    return sponsor_name, sponsor_link
+
+
 def parse_prize_configuration(prize_data):
     prizes = []
     for idx, line in enumerate(prize_data.splitlines(), start=1):
@@ -571,7 +606,7 @@ def parse_prize_configuration(prize_data):
                 "Zeile {}: Bitte das Format 'Name=Anzahl', 'Name | Sponsor=Anzahl' "
                 "oder 'Name | Sponsor (https://link)=Anzahl' verwenden.".format(idx)
             )
-        name_part, amount_part = map(str.strip, stripped.split("=", 1))
+        name_part, amount_part = map(str.strip, stripped.rsplit("=", 1))
         if not name_part:
             raise ValueError(f"Zeile {idx}: Preisname fehlt.")
         if not amount_part:
@@ -580,17 +615,7 @@ def parse_prize_configuration(prize_data):
         sponsor_link = ""
         if "|" in name_part:
             name_part, sponsor_part = map(str.strip, name_part.split("|", 1))
-            potential_sponsor = sponsor_part
-            if potential_sponsor.endswith(")") and "(" in potential_sponsor:
-                base, link_candidate = potential_sponsor.rsplit("(", 1)
-                link_candidate = link_candidate.rstrip(")").strip()
-                if link_candidate and link_candidate.lower().startswith(("http://", "https://")):
-                    sponsor = base.strip()
-                    sponsor_link = link_candidate
-                else:
-                    sponsor = potential_sponsor
-            else:
-                sponsor = potential_sponsor
+            sponsor, sponsor_link = extract_sponsor_details(sponsor_part)
         name = name_part
         if not name:
             raise ValueError(f"Zeile {idx}: Preisname fehlt.")
