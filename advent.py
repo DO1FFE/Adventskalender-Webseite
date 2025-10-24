@@ -835,16 +835,15 @@ def startseite():
     sponsor_order = []
 
     def format_sponsor_link_label(url, fallback_label=""):
-        parsed = urlparse(url)
-        host = parsed.netloc
-        if host:
-            path = parsed.path or ""
-            if path and path not in {"", "/"}:
-                return f"{host}{path}"
-            return host
         fallback = str(fallback_label or "").strip()
         if fallback:
             return fallback
+        parsed = urlparse(url)
+        host = parsed.netloc
+        if host:
+            if parsed.path and parsed.path not in {"", "/"}:
+                return f"{host}{parsed.path}"
+            return host
         return url
 
     for prize in prizes:
@@ -1754,13 +1753,6 @@ HOME_PAGE = '''
                 <ul class="sponsor-card__details">
                   {% for link in sponsor.links %}
                     <li class="sponsor-card__item">
-                      <span class="sponsor-card__label">
-                        {% if link.product %}
-                          {{ link.product }}
-                        {% else %}
-                          Unterstützung
-                        {% endif %}
-                      </span>
                       {% if link.url %}
                         <a class="sponsor-card__link" href="{{ link.url }}" target="_blank" rel="noopener noreferrer">{{ link.label }}</a>
                       {% else %}
