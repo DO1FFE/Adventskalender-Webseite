@@ -835,15 +835,16 @@ def startseite():
     sponsor_order = []
 
     def format_sponsor_link_label(url, fallback_label=""):
-        fallback = str(fallback_label or "").strip()
-        if fallback:
-            return fallback
         parsed = urlparse(url)
         host = parsed.netloc
         if host:
-            if parsed.path and parsed.path not in {"", "/"}:
-                return f"{host}{parsed.path}"
+            path = parsed.path or ""
+            if path and path not in {"", "/"}:
+                return f"{host}{path}"
             return host
+        fallback = str(fallback_label or "").strip()
+        if fallback:
+            return fallback
         return url
 
     for prize in prizes:
