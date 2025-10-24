@@ -1349,33 +1349,33 @@ HOME_PAGE = '''
         width: 100%;
         margin-top: 4px;
       }
-      .sponsor-card a {
-        display: flex;
+      .sponsor-link {
+        display: inline-flex;
         align-items: center;
         justify-content: center;
-        flex-wrap: wrap;
-        width: 100%;
         gap: 6px;
+        width: 100%;
         color: #d9f3ff;
         font-weight: 600;
         text-align: center;
         text-decoration: none;
       }
-      .sponsor-card a:visited {
+      a.sponsor-link:visited {
         color: #d9f3ff;
       }
-      .sponsor-link-label {
-        display: flex;
-        justify-content: center;
-        align-items: center;
-        width: 100%;
-        color: #d9f3ff;
-        font-weight: 600;
-        text-align: center;
-      }
-      .sponsor-card a::after {
+      a.sponsor-link::after {
         content: '↗';
         font-size: 0.85em;
+        margin-left: 4px;
+      }
+      .sponsor-link-label {
+        display: inline-flex;
+        justify-content: center;
+        align-items: center;
+        text-align: center;
+      }
+      .sponsor-link--text {
+        cursor: default;
       }
       .rewards-section {
         max-width: 960px;
@@ -1712,9 +1712,13 @@ HOME_PAGE = '''
                 <div class="sponsor-links">
                   {% for link in sponsor.links %}
                     {% if link.url %}
-                      <a href="{{ link.url }}" target="_blank" rel="noopener noreferrer">{{ link.label }}</a>
+                      <a class="sponsor-link" href="{{ link.url }}" target="_blank" rel="noopener noreferrer">
+                        <span class="sponsor-link-label">{{ link.label }}</span>
+                      </a>
                     {% else %}
-                      <span class="sponsor-link-label">{{ link.label }}</span>
+                      <div class="sponsor-link sponsor-link--text">
+                        <span class="sponsor-link-label">{{ link.label }}</span>
+                      </div>
                     {% endif %}
                   {% endfor %}
                 </div>
