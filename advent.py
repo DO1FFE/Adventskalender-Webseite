@@ -1286,11 +1286,13 @@ HOME_PAGE = '''
         list-style: none;
         padding: 0;
         margin: 0;
+        overflow-x: auto;
       }
       .prize-list li {
         margin-bottom: 8px;
         color: #ffeecf;
         font-weight: 600;
+        white-space: nowrap;
       }
       .sponsor-highlight {
         max-width: 960px;
