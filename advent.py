@@ -1123,6 +1123,30 @@ HOME_PAGE = '''
         from { transform: translate(-50%, -50%) rotate(0deg); }
         to { transform: translate(-50%, -50%) rotate(360deg); }
       }
+      @keyframes snowPlowBeaconPulse {
+        0%, 48%, 100% {
+          opacity: 0.35;
+          transform: scale(0.9);
+          box-shadow: 0 0 6px rgba(255, 216, 111, 0.45),
+                      0 0 12px rgba(255, 216, 111, 0.35);
+        }
+        50% {
+          opacity: 1;
+          transform: scale(1);
+          box-shadow: 0 0 10px rgba(255, 216, 111, 0.7),
+                      0 0 24px rgba(255, 216, 111, 0.9);
+        }
+      }
+      @keyframes snowPlowBeaconHalo {
+        0%, 48%, 100% {
+          opacity: 0;
+          transform: scale(0.6);
+        }
+        50% {
+          opacity: 0.9;
+          transform: scale(1);
+        }
+      }
       #snow-canvas {
         position: fixed;
         top: 0;
@@ -1187,6 +1211,16 @@ HOME_PAGE = '''
         background: radial-gradient(circle at 30% 30%, #fff7d3 0%, #ffd86f 60%, rgba(255, 216, 111, 0) 100%);
         border-radius: 50%;
         box-shadow: 0 0 12px rgba(255, 216, 111, 0.8);
+        animation: snowPlowBeaconPulse 1.2s infinite ease-in-out;
+      }
+      .snow-plow__light::after {
+        content: "";
+        position: absolute;
+        inset: -20px;
+        border-radius: 50%;
+        background: radial-gradient(circle, rgba(255, 216, 111, 0.55) 0%, rgba(255, 216, 111, 0) 70%);
+        opacity: 0;
+        animation: snowPlowBeaconHalo 1.2s infinite ease-out;
       }
       .snow-plow__blade {
         position: absolute;
