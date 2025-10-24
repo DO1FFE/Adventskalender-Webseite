@@ -1325,8 +1325,8 @@ HOME_PAGE = '''
         text-align: center;
         display: flex;
         flex-direction: column;
-        align-items: center;
-        justify-content: center;
+        align-items: stretch;
+        justify-content: flex-start;
         gap: 10px;
         min-height: 110px;
         transition: transform 0.2s ease, box-shadow 0.2s ease;
@@ -1346,6 +1346,8 @@ HOME_PAGE = '''
         align-items: stretch;
         gap: 6px;
         width: 100%;
+        flex: 0 0 auto;
+        margin-top: 4px;
       }
       .sponsor-card a {
         display: inline-flex;
