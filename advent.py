@@ -1154,14 +1154,12 @@ HOME_PAGE = '''
       footer {
         border-bottom: none;
         border-top: 2px solid rgba(255, 255, 255, 0.2);
-        position: fixed;
-        bottom: 0;
-        left: 0;
+        position: relative;
         width: 100%;
         display: flex;
         justify-content: center;
-        z-index: 1000;
         align-items: center;
+        z-index: 3;
       }
       .footer-inner {
         width: min(100%, 960px);
