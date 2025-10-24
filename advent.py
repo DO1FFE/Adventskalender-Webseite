@@ -1287,20 +1287,22 @@ HOME_PAGE = '''
         padding: 0;
         margin: 0;
         display: flex;
+        flex-direction: column;
         gap: 12px;
-        justify-content: center;
         align-items: stretch;
       }
       .prize-list li {
-        flex: 1 1 0;
+        flex: 1 1 auto;
         min-width: 0;
+        width: 100%;
         padding: 10px 16px;
         border-radius: 12px;
         background: rgba(17, 45, 68, 0.75);
         color: #ffeecf;
         font-weight: 600;
-        text-align: center;
-        white-space: nowrap;
+        text-align: left;
+        white-space: normal;
+        word-break: break-word;
       }
       .sponsor-highlight {
         max-width: 960px;
