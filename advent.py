@@ -1325,10 +1325,10 @@ HOME_PAGE = '''
         border: 1px solid rgba(255, 255, 255, 0.18);
         box-shadow: 0 10px 24px rgba(0, 0, 0, 0.35);
         text-align: center;
-        display: grid;
-        grid-auto-rows: auto;
-        justify-items: stretch;
-        align-content: start;
+        display: flex;
+        flex-direction: column;
+        align-items: stretch;
+        justify-content: flex-start;
         gap: 10px;
         min-height: 110px;
         transition: transform 0.2s ease, box-shadow 0.2s ease;
@@ -1343,15 +1343,14 @@ HOME_PAGE = '''
         font-size: 1.05rem;
       }
       .sponsor-links {
-        display: grid;
-        grid-auto-rows: auto;
+        display: flex;
+        flex-direction: column;
         gap: 6px;
         width: 100%;
         margin-top: 4px;
-        align-content: start;
       }
       .sponsor-card a {
-        display: inline-flex;
+        display: flex;
         align-items: center;
         justify-content: center;
         flex-wrap: wrap;
@@ -1366,7 +1365,7 @@ HOME_PAGE = '''
         color: #d9f3ff;
       }
       .sponsor-link-label {
-        display: inline-flex;
+        display: flex;
         justify-content: center;
         align-items: center;
         width: 100%;
