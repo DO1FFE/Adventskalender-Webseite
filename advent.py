@@ -1315,67 +1315,105 @@ HOME_PAGE = '''
       }
       .sponsor-grid {
         display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-        gap: 16px;
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+        gap: 20px;
       }
       .sponsor-card {
-        padding: 16px 18px;
-        border-radius: 14px;
-        background: rgba(11, 29, 43, 0.82);
+        position: relative;
+        padding: 20px 22px 18px;
+        border-radius: 18px;
+        background: radial-gradient(circle at 20% 20%, rgba(255, 207, 92, 0.25), rgba(11, 29, 43, 0.9));
         border: 1px solid rgba(255, 255, 255, 0.18);
-        box-shadow: 0 10px 24px rgba(0, 0, 0, 0.35);
-        text-align: center;
+        box-shadow: 0 18px 28px rgba(0, 0, 0, 0.45);
         display: flex;
         flex-direction: column;
-        align-items: stretch;
-        justify-content: flex-start;
-        gap: 10px;
-        min-height: 110px;
-        transition: transform 0.2s ease, box-shadow 0.2s ease;
+        gap: 14px;
+        min-height: 160px;
+        overflow: hidden;
+        isolation: isolate;
+        transition: transform 0.25s ease, box-shadow 0.25s ease;
+      }
+      .sponsor-card::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background: linear-gradient(140deg, rgba(255, 255, 255, 0.18), transparent 55%);
+        opacity: 0.7;
+        transition: opacity 0.3s ease;
+        pointer-events: none;
       }
       .sponsor-card:hover {
-        transform: translateY(-4px);
-        box-shadow: 0 16px 28px rgba(0, 0, 0, 0.45);
+        transform: translateY(-6px);
+        box-shadow: 0 22px 38px rgba(0, 0, 0, 0.55);
       }
-      .sponsor-name {
-        color: #ffcf5c;
+      .sponsor-card:hover::before {
+        opacity: 0.95;
+      }
+      .sponsor-card__header {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+      .sponsor-card__icon {
+        width: 48px;
+        height: 48px;
+        border-radius: 16px;
+        background: linear-gradient(135deg, rgba(255, 207, 92, 0.95), rgba(255, 125, 125, 0.85));
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.6rem;
+        color: #102030;
+        box-shadow: 0 10px 16px rgba(0, 0, 0, 0.3);
+      }
+      .sponsor-card__name {
+        margin: 0;
+        color: #ffefc2;
         font-weight: 700;
-        font-size: 1.05rem;
+        font-size: 1.15rem;
+        text-align: left;
       }
-      .sponsor-links {
+      .sponsor-card__details {
+        margin: 0;
+        padding: 0;
+        list-style: none;
         display: flex;
         flex-direction: column;
-        gap: 6px;
-        width: 100%;
-        margin-top: 4px;
+        gap: 10px;
       }
-      .sponsor-link {
+      .sponsor-card__item {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        background: rgba(6, 20, 32, 0.6);
+        border-radius: 12px;
+        padding: 10px 12px;
+        box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+      }
+      .sponsor-card__label {
+        font-size: 0.85rem;
+        color: rgba(217, 243, 255, 0.8);
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+      }
+      .sponsor-card__link,
+      .sponsor-card__text {
         display: inline-flex;
         align-items: center;
-        justify-content: center;
-        gap: 6px;
-        width: 100%;
-        color: #d9f3ff;
+        gap: 8px;
         font-weight: 600;
-        text-align: center;
-        text-decoration: none;
-      }
-      a.sponsor-link:visited {
+        font-size: 0.95rem;
         color: #d9f3ff;
+        text-decoration: none;
+        word-break: break-word;
       }
-      a.sponsor-link::after {
-        content: '↗';
-        font-size: 0.85em;
-        margin-left: 4px;
+      .sponsor-card__link::after {
+        content: "↗";
+        font-size: 0.8em;
       }
-      .sponsor-link-label {
-        display: inline-flex;
-        justify-content: center;
-        align-items: center;
-        text-align: center;
-      }
-      .sponsor-link--text {
-        cursor: default;
+      .sponsor-card__link:hover {
+        color: #8de0ff;
+        text-decoration: underline;
       }
       .rewards-section {
         max-width: 960px;
@@ -1707,21 +1745,29 @@ HOME_PAGE = '''
         <div class="sponsor-grid">
           {% for sponsor in sponsors %}
             <article class="sponsor-card">
-              <div class="sponsor-name">{{ sponsor.name }}</div>
+              <div class="sponsor-card__header">
+                <div class="sponsor-card__icon" aria-hidden="true">🎁</div>
+                <h3 class="sponsor-card__name">{{ sponsor.name }}</h3>
+              </div>
               {% if sponsor.links %}
-                <div class="sponsor-links">
+                <ul class="sponsor-card__details">
                   {% for link in sponsor.links %}
-                    {% if link.url %}
-                      <a class="sponsor-link" href="{{ link.url }}" target="_blank" rel="noopener noreferrer">
-                        <span class="sponsor-link-label">{{ link.label }}</span>
-                      </a>
-                    {% else %}
-                      <div class="sponsor-link sponsor-link--text">
-                        <span class="sponsor-link-label">{{ link.label }}</span>
-                      </div>
-                    {% endif %}
+                    <li class="sponsor-card__item">
+                      <span class="sponsor-card__label">
+                        {% if link.product %}
+                          {{ link.product }}
+                        {% else %}
+                          Unterstützung
+                        {% endif %}
+                      </span>
+                      {% if link.url %}
+                        <a class="sponsor-card__link" href="{{ link.url }}" target="_blank" rel="noopener noreferrer">{{ link.label }}</a>
+                      {% else %}
+                        <span class="sponsor-card__text">{{ link.label }}</span>
+                      {% endif %}
+                    </li>
                   {% endfor %}
-                </div>
+                </ul>
               {% endif %}
             </article>
           {% endfor %}
