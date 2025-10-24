@@ -1326,7 +1326,7 @@ HOME_PAGE = '''
         box-shadow: 0 10px 24px rgba(0, 0, 0, 0.35);
         text-align: center;
         display: grid;
-        grid-auto-rows: min-content;
+        grid-auto-rows: auto;
         justify-items: stretch;
         align-content: start;
         gap: 10px;
@@ -1344,7 +1344,7 @@ HOME_PAGE = '''
       }
       .sponsor-links {
         display: grid;
-        grid-auto-rows: min-content;
+        grid-auto-rows: auto;
         gap: 6px;
         width: 100%;
         margin-top: 4px;
