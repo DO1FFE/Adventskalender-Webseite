@@ -1109,7 +1109,7 @@ HOME_PAGE = '''
         background: linear-gradient(180deg, #0b1d2b 0%, #12324a 50%, #1c5560 100%);
         position: relative;
         overflow-x: hidden;
-        padding-bottom: 80px;
+        padding-bottom: calc(var(--footer-height, 160px) + 40px);
       }
       body::before,
       body::after {
@@ -1154,7 +1154,9 @@ HOME_PAGE = '''
       footer {
         border-bottom: none;
         border-top: 2px solid rgba(255, 255, 255, 0.2);
-        position: relative;
+        position: fixed;
+        bottom: 0;
+        left: 0;
         width: 100%;
         display: flex;
         justify-content: center;
@@ -1458,7 +1460,7 @@ HOME_PAGE = '''
         margin: 12px 0 0;
       }
       main {
-        padding: 30px 20px 160px;
+        padding: 30px 20px calc(var(--footer-height, 160px) + 40px);
         position: relative;
         z-index: 3;
       }
@@ -2333,7 +2335,7 @@ GENERIC_PAGE = '''
         background: linear-gradient(180deg, #0b1d2b 0%, #12324a 50%, #1c5560 100%);
         position: relative;
         overflow-x: hidden;
-        padding-bottom: 80px;
+        padding-bottom: calc(var(--footer-height, 160px) + 40px);
       }
       body::before,
       body::after {
@@ -2862,7 +2864,7 @@ ADMIN_PAGE = '''
       body {
         margin: 0;
         padding: 2rem;
-        padding-bottom: 8rem;
+        padding-bottom: calc(var(--footer-height, 160px) + 40px);
         background: #f5f7fa;
         font-family: 'Open Sans', Arial, sans-serif;
         color: #1b2a35;
