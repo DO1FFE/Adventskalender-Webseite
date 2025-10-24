@@ -2058,7 +2058,7 @@ HOME_PAGE = '''
           if (plowState.timerId) {
             clearTimeout(plowState.timerId);
           }
-          const delay = 120000 + Math.random() * 180000;
+          const delay = 60000 + Math.random() * 60000;
           plowState.timerId = setTimeout(() => {
             plowState.timerId = null;
             startPlow();
