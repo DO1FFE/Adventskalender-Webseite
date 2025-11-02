@@ -2184,7 +2184,7 @@ HOME_PAGE = '''
       </div>
       {% endif %}
       <h1>Adventskalender des OV L11</h1>
-      <p>Stell jeden Tag ein neues Türchen frei, genieße die winterliche Vorfreude und sichere dir mit etwas Glück {% if prize_phrase %}einen unserer festlichen Preise wie {{ prize_phrase }}{% else %}einen festlichen Preis{% endif %} in unserer festlich geschmückten Clubstation!</p>
+      <p>Stell jeden Tag ein neues Türchen frei, genieße die winterliche Vorfreude und sichere dir mit etwas Glück {% if prize_phrase %}einen unserer festlichen Preise wie {{ prize_phrase }}{% else %}einen festlichen Preis{% endif %} in unserer festlich geschmückten Clubstation! Die Preisvergabe findet am ersten OV-Abend am 13.01.2026 um 19 Uhr statt.</p>
       {% if sponsors %}
       <section class="sponsor-highlight">
         <h2>Unsere Sponsoren</h2>
