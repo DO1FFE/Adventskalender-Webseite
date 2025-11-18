@@ -2478,18 +2478,31 @@ HOME_PAGE = '''
           }
           if (removedTotal > 0) {
             const span = Math.max(1, clampedEnd - clampedStart + 1);
-            const depositBase = removedTotal / span * 0.45;
-            const rightIndex = Math.min(columns - 1, clampedEnd + 1);
-            const farRightIndex = Math.min(columns - 1, clampedEnd + 2);
-            const leftIndex = Math.max(0, clampedStart - 1);
-            if (rightIndex >= 0 && rightIndex < columns) {
-              heightField[rightIndex] = Math.min(maxHeight(), heightField[rightIndex] + depositBase * 1.6);
-            }
-            if (farRightIndex >= 0 && farRightIndex < columns) {
-              heightField[farRightIndex] = Math.min(maxHeight(), heightField[farRightIndex] + depositBase * 1.1);
-            }
-            if (leftIndex >= 0 && leftIndex < columns) {
-              heightField[leftIndex] = Math.min(maxHeight(), heightField[leftIndex] + depositBase * 0.6);
+            const depositBase = (removedTotal / span) * 0.32;
+            const rightIndex = clampedEnd + 1;
+            const farRightIndex = clampedEnd + 2;
+            const forwardIndex = clampedEnd + 3;
+            const leftIndex = clampedStart - 1;
+            let overflowSnow = 0;
+            const depositAtColumn = (index, amount) => {
+              if (amount <= 0) {
+                return;
+              }
+              if (index < 0 || index >= columns) {
+                overflowSnow += amount;
+                return;
+              }
+              heightField[index] = Math.min(maxHeight(), heightField[index] + amount);
+            };
+            depositAtColumn(rightIndex, depositBase * 1.8);
+            depositAtColumn(farRightIndex, depositBase * 1.5);
+            depositAtColumn(forwardIndex, depositBase * 0.9);
+            depositAtColumn(leftIndex, depositBase * 0.1);
+            if (overflowSnow > 0) {
+              const extraSpray = Math.min(6, Math.round(overflowSnow / Math.max(6, maxHeight())));
+              for (let i = 0; i < extraSpray; i++) {
+                spawnSprayParticle();
+              }
             }
           }
         }
@@ -2584,8 +2597,8 @@ HOME_PAGE = '''
             const rightColumn = Math.min(columns - 1, Math.floor(activeSegment.end / columnWidth));
             const leftHeight = heightField[leftColumn] || 0;
             const rightHeight = heightField[rightColumn] || 0;
-            activeSegment.bankHeight = 18 + Math.min(28, (leftHeight + rightHeight) * 0.22);
-            activeSegment.opacity = Math.min(1, activeSegment.opacity + seconds * 2.5);
+            activeSegment.bankHeight = 8 + Math.min(16, (leftHeight + rightHeight) * 0.12);
+            activeSegment.opacity = Math.min(0.45, activeSegment.opacity + seconds * 1.2);
           }
           for (let i = trailSegments.length - 1; i >= 0; i--) {
             const segment = trailSegments[i];
