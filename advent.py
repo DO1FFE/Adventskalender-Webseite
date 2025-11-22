@@ -22,8 +22,11 @@ from flask import (
     redirect,
     url_for,
 )
+from flask_wtf import CSRFProtect
+from flask_wtf.csrf import CSRFError, generate_csrf, validate_csrf
 from markupsafe import Markup, escape
 from werkzeug.security import generate_password_hash, check_password_hash
+from wtforms.validators import ValidationError
 
 # Logging-Konfiguration
 logging.basicConfig(filename='debug.log', level=logging.DEBUG, 
@@ -38,9 +41,21 @@ local_timezone = pytz.timezone("Europe/Berlin")
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", "please-change-me")
+csrf = CSRFProtect()
+csrf.init_app(app)
 
 USER_DATABASE = "users.db"
 ADMIN_EMAIL = "do1ffe@darc.de"
+
+CSRF_ERROR_MESSAGE = (
+    "Ungültiges oder fehlendes Sicherheits-Token. Bitte lade die Seite neu und "
+    "versuche es erneut."
+)
+
+
+@app.context_processor
+def inject_csrf_token():
+    return {"csrf_token": generate_csrf}
 
 
 def get_db_connection():
@@ -88,6 +103,15 @@ def init_user_db():
 
 
 init_user_db()
+
+
+def validate_form_csrf(form):
+    try:
+        validate_csrf(form.get("csrf_token"))
+    except (ValidationError, CSRFError) as exc:
+        logging.warning("CSRF-Validierung fehlgeschlagen: %s", exc)
+        return CSRF_ERROR_MESSAGE
+    return ""
 
 
 def normalise_email(email):
@@ -728,6 +752,7 @@ def speichere_gewinner(user_identifier, display_name, tag, preis, jahr=None, spo
         )
 
 @app.route('/login', methods=['GET', 'POST'])
+@csrf.exempt
 def login():
     if session.get('user_id'):
         return redirect(url_for('startseite'))
@@ -739,14 +764,18 @@ def login():
         message = "Dein Konto wurde erfolgreich erstellt. Bitte melde dich jetzt an."
 
     if request.method == 'POST':
-        email = (request.form.get('email') or "").strip()
-        password = request.form.get('password') or ""
-        user = get_user_by_email(email)
-        if not user or not verify_password(user, password):
-            error = "E-Mail-Adresse oder Passwort sind nicht korrekt."
+        csrf_error = validate_form_csrf(request.form)
+        if csrf_error:
+            error = csrf_error
         else:
-            session['user_id'] = user['id']
-            return redirect(url_for('startseite'))
+            email = (request.form.get('email') or "").strip()
+            password = request.form.get('password') or ""
+            user = get_user_by_email(email)
+            if not user or not verify_password(user, password):
+                error = "E-Mail-Adresse oder Passwort sind nicht korrekt."
+            else:
+                session['user_id'] = user['id']
+                return redirect(url_for('startseite'))
 
     return render_template_string(
         LOGIN_PAGE,
@@ -757,6 +786,7 @@ def login():
 
 
 @app.route('/register', methods=['GET', 'POST'])
+@csrf.exempt
 def register():
     if session.get('user_id'):
         return redirect(url_for('startseite'))
@@ -766,28 +796,32 @@ def register():
     display_name = ""
 
     if request.method == 'POST':
-        display_name = (request.form.get('display_name') or "").strip()
-        email = (request.form.get('email') or "").strip()
-        password = request.form.get('password') or ""
-        confirm_password = request.form.get('confirm_password') or ""
-
-        if not display_name:
-            error = "Bitte gib einen Anzeigenamen an."
-        elif not email:
-            error = "Bitte gib eine gültige E-Mail-Adresse an."
-        elif not password:
-            error = "Bitte wähle ein Passwort."
-        elif password != confirm_password:
-            error = "Die Passwörter stimmen nicht überein."
-        elif len(password) < 8:
-            error = "Das Passwort muss mindestens 8 Zeichen lang sein."
+        csrf_error = validate_form_csrf(request.form)
+        if csrf_error:
+            error = csrf_error
         else:
-            try:
-                create_user(email, display_name, password)
-            except ValueError as exc:
-                error = str(exc)
+            display_name = (request.form.get('display_name') or "").strip()
+            email = (request.form.get('email') or "").strip()
+            password = request.form.get('password') or ""
+            confirm_password = request.form.get('confirm_password') or ""
+
+            if not display_name:
+                error = "Bitte gib einen Anzeigenamen an."
+            elif not email:
+                error = "Bitte gib eine gültige E-Mail-Adresse an."
+            elif not password:
+                error = "Bitte wähle ein Passwort."
+            elif password != confirm_password:
+                error = "Die Passwörter stimmen nicht überein."
+            elif len(password) < 8:
+                error = "Das Passwort muss mindestens 8 Zeichen lang sein."
             else:
-                return redirect(url_for('login', registered=1))
+                try:
+                    create_user(email, display_name, password)
+                except ValueError as exc:
+                    error = str(exc)
+                else:
+                    return redirect(url_for('login', registered=1))
 
     return render_template_string(
         REGISTER_PAGE,
@@ -3118,6 +3152,7 @@ LOGIN_PAGE = '''
         <div class="error">{{ error }}</div>
       {% endif %}
       <form method="post" novalidate>
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <div>
           <label for="email">E-Mail-Adresse</label>
           <input type="email" id="email" name="email" value="{{ email or '' }}" required autocomplete="email">
@@ -3232,6 +3267,7 @@ REGISTER_PAGE = '''
         <div class="error">{{ error }}</div>
       {% endif %}
       <form method="post" novalidate>
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <div>
           <label for="display_name">Anzeigename</label>
           <input type="text" id="display_name" name="display_name" value="{{ display_name or '' }}" placeholder="Rufzeichen oder Name" required>
@@ -4056,6 +4092,7 @@ ADMIN_PAGE = '''
         <h2>Kalenderstatus</h2>
         <form method="post" class="status-form">
           <input type="hidden" name="action" value="update_status">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <label>
             <input type="checkbox" name="calendar_active" {% if calendar_active %}checked{% endif %}>
             Adventskalender ist aktiv
@@ -4076,6 +4113,7 @@ ADMIN_PAGE = '''
         <p>Eintrag pro Zeile im Format <code>Name | Sponsor=Gesamt</code> oder <code>Name | Sponsor=Gesamt/Verfügbar</code>. Optional kann ein Link mit <code>Name | Sponsor (https://link)=...</code> angegeben werden. Der Sponsor ist optional; Zeilen mit Anzahl 0 werden ignoriert.</p>
         <form method="post">
           <input type="hidden" name="action" value="update_prizes">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <textarea name="prize_data" id="prize_data">{{ prize_lines }}</textarea>
           <button type="submit">Preise speichern</button>
         </form>
@@ -4151,6 +4189,7 @@ ADMIN_PAGE = '''
                         <form id="{{ form_id }}" method="post" class="user-inline-form">
                           <input type="hidden" name="action" value="update_user">
                           <input type="hidden" name="user_id" value="{{ registered_user.id }}">
+                          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                           <button type="submit">Speichern</button>
                         </form>
                         <form
@@ -4160,6 +4199,7 @@ ADMIN_PAGE = '''
                         >
                           <input type="hidden" name="action" value="delete_user">
                           <input type="hidden" name="user_id" value="{{ registered_user.id }}">
+                          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                           <button type="submit" class="danger">Löschen</button>
                         </form>
                       </div>
@@ -4180,6 +4220,7 @@ ADMIN_PAGE = '''
           <pre>{{ teilnehmer_inhalt }}</pre>
           <form method="post">
             <input type="hidden" name="action" value="reset_teilnehmer">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <button type="submit">Teilnehmer zurücksetzen</button>
           </form>
         </section>
@@ -4188,6 +4229,7 @@ ADMIN_PAGE = '''
           <pre>{{ gewinner_inhalt }}</pre>
           <form method="post">
             <input type="hidden" name="action" value="reset_gewinner">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <button type="submit">Gewinner zurücksetzen</button>
           </form>
         </section>
@@ -4209,6 +4251,7 @@ ADMIN_PAGE = '''
         {% endif %}
         <form method="post">
           <input type="hidden" name="action" value="reset_qr_codes">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <button type="submit">QR-Codes löschen</button>
         </form>
       </section>
