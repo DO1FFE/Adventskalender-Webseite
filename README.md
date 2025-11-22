@@ -19,9 +19,9 @@ Dieses Repository enthält den Code für einen digitalen Adventskalender, spezie
 ## Setup
 
 1. Stellen Sie sicher, dass Python auf Ihrem System installiert ist.
-2. Installieren Sie Flask, `qrcode` und `pytz`:
+2. Installieren Sie Flask, `qrcode`, `pytz` und `Flask-WTF`:
    ```bash
-   pip install Flask qrcode pytz
+   pip install Flask Flask-WTF qrcode pytz
    ```
 3. Klonen Sie das Repository und navigieren Sie in das Projektverzeichnis.
 4. Starten Sie den Server:
