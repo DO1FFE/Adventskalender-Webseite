@@ -44,7 +44,8 @@ app.secret_key = os.environ.get("FLASK_SECRET_KEY", "please-change-me")
 csrf = CSRFProtect()
 csrf.init_app(app)
 
-USER_DATABASE = "users.db"
+BASE_DIR = os.path.abspath(os.path.dirname(__file__))
+USER_DATABASE = os.path.join(BASE_DIR, "users.db")
 ADMIN_EMAIL = "do1ffe@darc.de"
 
 CSRF_ERROR_MESSAGE = (
