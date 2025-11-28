@@ -30,6 +30,8 @@ Dieses Repository enthält den Code für einen digitalen Adventskalender, spezie
    ```
 5. Öffnen Sie einen Webbrowser und gehen Sie zu `http://localhost:8087/`.
 
+> Hinweis: Die SQLite-Datenbank `users.db` wird bei Bedarf automatisch im Projektverzeichnis angelegt und ist daher nicht im Repository enthalten.
+
 ## Konfiguration
 
 - Sie können die Uhrzeiten für die Gewinnvergabe in der Datei `advent.py` anpassen.
