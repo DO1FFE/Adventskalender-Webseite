@@ -69,6 +69,136 @@ def get_db_connection():
     return connection
 
 
+def normalise_email(email):
+    if email is None:
+        return ""
+    return email.strip().lower()
+
+
+def generate_placeholder_email(existing_emails, user_id):
+    base_email = f"user-{user_id}@example.invalid"
+    candidate = base_email
+    suffix = 1
+
+    while candidate in existing_emails:
+        candidate = f"user-{user_id}-{suffix}@example.invalid"
+        suffix += 1
+
+    existing_emails.add(candidate)
+    return candidate
+
+
+def sanitize_user_records(connection):
+    try:
+        cursor = connection.execute(
+            "SELECT id, email, display_name, password_hash FROM users ORDER BY id"
+        )
+    except sqlite3.DatabaseError as exc:
+        logging.error("Benutzer konnten nicht geprüft werden: %s", exc)
+        return
+
+    rows = cursor.fetchall()
+    existing_emails = {
+        normalise_email(row["email"])
+        for row in rows
+        if normalise_email(row["email"])
+    }
+
+    sanitized = 0
+
+    for row in rows:
+        raw_email = row["email"]
+        email = normalise_email(raw_email)
+        raw_display_name = row["display_name"]
+        display_name = (raw_display_name or "").strip()
+        password_hash = row["password_hash"]
+        needs_update = False
+
+        if not email:
+            email = generate_placeholder_email(existing_emails, row["id"])
+            needs_update = True
+        else:
+            existing_emails.add(email)
+            if raw_email != email:
+                needs_update = True
+
+        if not display_name:
+            display_name = email or f"Benutzer {row['id']}"
+            needs_update = True
+        elif raw_display_name != display_name:
+            needs_update = True
+
+        if password_hash is None:
+            password_hash = ""
+            needs_update = True
+
+        if needs_update:
+            sanitized += 1
+            connection.execute(
+                "UPDATE users SET email = ?, display_name = ?, password_hash = ? WHERE id = ?",
+                (email, display_name, password_hash, row["id"]),
+            )
+
+    if sanitized and DEBUG:
+        logging.debug("%s Benutzereinträge wurden bereinigt.", sanitized)
+
+
+def users_table_needs_migration(connection):
+    try:
+        columns = connection.execute("PRAGMA table_info(users)").fetchall()
+    except sqlite3.DatabaseError as exc:
+        logging.error("Benutzertabelle konnte nicht geprüft werden: %s", exc)
+        return False
+
+    if not columns:
+        return True
+
+    column_map = {column["name"]: column for column in columns}
+    required_not_null = {
+        "email": 1,
+        "display_name": 1,
+        "password_hash": 1,
+    }
+
+    for column_name, required in required_not_null.items():
+        column = column_map.get(column_name)
+        if not column or column["notnull"] != required:
+            return True
+
+    return False
+
+
+def migrate_users_table(connection):
+    sanitize_user_records(connection)
+
+    try:
+        connection.execute("PRAGMA foreign_keys = OFF")
+        connection.execute("ALTER TABLE users RENAME TO users_legacy")
+        connection.execute(
+            """
+            CREATE TABLE users (
+                id INTEGER PRIMARY KEY,
+                email TEXT UNIQUE NOT NULL CHECK (trim(email) <> ''),
+                display_name TEXT NOT NULL CHECK (trim(display_name) <> ''),
+                password_hash TEXT NOT NULL
+            )
+            """
+        )
+        connection.execute(
+            """
+            INSERT INTO users (id, email, display_name, password_hash)
+            SELECT id, email, display_name, COALESCE(password_hash, '')
+            FROM users_legacy
+            """
+        )
+        connection.execute("DROP TABLE users_legacy")
+    except sqlite3.DatabaseError as exc:
+        logging.error("Benutzertabelle konnte nicht migriert werden: %s", exc)
+        raise
+    finally:
+        connection.execute("PRAGMA foreign_keys = ON")
+
+
 def init_user_db():
     try:
         with get_db_connection() as connection:
@@ -76,12 +206,18 @@ def init_user_db():
                 """
                 CREATE TABLE IF NOT EXISTS users (
                     id INTEGER PRIMARY KEY,
-                    email TEXT UNIQUE,
-                    display_name TEXT,
-                    password_hash TEXT
+                    email TEXT UNIQUE NOT NULL CHECK (trim(email) <> ''),
+                    display_name TEXT NOT NULL CHECK (trim(display_name) <> ''),
+                    password_hash TEXT NOT NULL
                 )
                 """
             )
+
+            if users_table_needs_migration(connection):
+                migrate_users_table(connection)
+            else:
+                sanitize_user_records(connection)
+
             connection.execute(
                 """
                 CREATE TABLE IF NOT EXISTS user_rewards (
@@ -115,12 +251,6 @@ def validate_form_csrf(form):
     return ""
 
 
-def normalise_email(email):
-    if email is None:
-        return ""
-    return email.strip().lower()
-
-
 def get_user_by_email(email):
     email_normalised = normalise_email(email)
     if not email_normalised:
@@ -150,7 +280,9 @@ def get_all_users():
     with get_db_connection() as connection:
         cursor = connection.execute(
             """
-            SELECT id, email, display_name
+            SELECT id,
+                   COALESCE(email, '') AS email,
+                   COALESCE(display_name, '') AS display_name
             FROM users
             ORDER BY LOWER(email)
             """
@@ -167,7 +299,11 @@ def update_user(user_id, email, display_name, password=None):
     if not user:
         raise ValueError("Benutzer konnte nicht gefunden werden.")
 
-    email_normalised = normalise_email(email) if email else user.get("email")
+    email_normalised = (
+        normalise_email(email)
+        if email is not None
+        else normalise_email(user.get("email"))
+    )
     if not email_normalised:
         raise ValueError("Bitte gib eine gültige E-Mail-Adresse an.")
 
@@ -341,6 +477,8 @@ def create_user(email, display_name, password):
     if not email_normalised or not password:
         raise ValueError("E-Mail-Adresse und Passwort dürfen nicht leer sein.")
     display_name = (display_name or email_normalised).strip()
+    if not display_name:
+        raise ValueError("Bitte gib einen Anzeigenamen an.")
     password_hash = generate_password_hash(password)
     try:
         with get_db_connection() as connection:
