@@ -8,6 +8,7 @@ import random
 import qrcode
 import os
 import json
+import math
 import pytz
 import shutil
 import sqlite3
@@ -510,6 +511,7 @@ def is_admin_user(user):
 tuerchen_status = {tag: set() for tag in range(1, 25)}
 PRIZE_FILE = "preise.json"
 CALENDAR_STATUS_FILE = "kalender_status.json"
+DAILY_PRIZE_FILE = os.path.join(BASE_DIR, "tagespreise.json")
 gewinn_zeiten = [12, 13, 14, 15, 16, 17, 18, 19, 20, 21]
 tuerchen_farben = ["#FFCCCC", "#CCFFCC", "#CCCCFF", "#FFFFCC", "#CCFFFF", "#FFCCFF", "#FFCC99", "#99CCFF", "#FF9999", "#99FF99", "#9999FF", "#FF9966"] * 2
 
@@ -685,6 +687,58 @@ def get_prize_stats(prizes=None):
     return prizes, total, remaining, awarded
 
 
+def load_daily_prize_counters():
+    data = {"awards": {}}
+    if not os.path.exists(DAILY_PRIZE_FILE):
+        return data
+
+    try:
+        with open(DAILY_PRIZE_FILE, "r", encoding="utf-8") as file:
+            loaded = json.load(file)
+        awards = loaded.get("awards", {}) if isinstance(loaded, dict) else {}
+        if isinstance(awards, dict):
+            normalised = {}
+            for key, value in awards.items():
+                try:
+                    normalised[str(key)] = max(int(value), 0)
+                except (TypeError, ValueError):
+                    continue
+            data["awards"] = normalised
+    except (json.JSONDecodeError, OSError, TypeError) as exc:
+        logging.error("Fehler beim Laden der Tagespreise: %s", exc)
+
+    return data
+
+
+def save_daily_prize_counters(data):
+    try:
+        with open(DAILY_PRIZE_FILE, "w", encoding="utf-8") as file:
+            json.dump(data, file, indent=2, ensure_ascii=False)
+    except OSError as exc:
+        logging.error("Fehler beim Speichern der Tagespreise: %s", exc)
+
+
+def get_daily_awarded_prizes(today):
+    data = load_daily_prize_counters()
+    awards = data.setdefault("awards", {})
+    today_key = today.isoformat()
+    count = max(int(awards.get(today_key, 0)), 0)
+    if today_key not in awards:
+        awards[today_key] = count
+        save_daily_prize_counters(data)
+    return count
+
+
+def increment_daily_awarded_prizes(today):
+    data = load_daily_prize_counters()
+    awards = data.setdefault("awards", {})
+    today_key = today.isoformat()
+    current = max(int(awards.get(today_key, 0)), 0) + 1
+    awards[today_key] = current
+    save_daily_prize_counters(data)
+    return current
+
+
 def reduce_prize(prizes, current_day=None):
     available = []
     for idx, prize in enumerate(prizes):
@@ -824,9 +878,14 @@ def hat_gewonnen(user_identifier):
     return False
 
 
+def verbleibende_tage_bis_letztes_tuerchen(heutiges_datum):
+    letzter_tag = datetime.date(heutiges_datum.year, 12, 24)
+    return max((letzter_tag - heutiges_datum).days + 1, 0)
+
+
 def gewinnchance_ermitteln(user_identifier, heutiges_datum, verbleibende_preise):
     """Berechnet die Gewinnchance anhand der vorhandenen Preise und vergangener Gewinne."""
-    verbleibende_tage = 25 - heutiges_datum.day
+    verbleibende_tage = verbleibende_tage_bis_letztes_tuerchen(heutiges_datum)
     if verbleibende_tage <= 0 or verbleibende_preise <= 0:
         return 0
 
@@ -1158,13 +1217,29 @@ def oeffne_tuerchen(tag):
 
         speichere_teilnehmer(user_id, display_name, tag)
         tuerchen_status[tag].add(str(user_id))
+        heutige_gewinner = get_daily_awarded_prizes(heute)
 
         prizes, max_preise, verbleibende_preise, _ = get_prize_stats()
         if verbleibende_preise <= 0:
             if DEBUG: logging.debug("Keine Preise mehr verfügbar")
             return make_response(render_template_string(GENERIC_PAGE, content="Alle Preise wurden bereits vergeben."))
 
-        gewinnchance = gewinnchance_ermitteln(user_id, heute, verbleibende_preise)
+        verbleibende_tage = verbleibende_tage_bis_letztes_tuerchen(heute)
+        tageskontingent = (
+            math.ceil(verbleibende_preise / verbleibende_tage)
+            if verbleibende_tage > 0 and verbleibende_preise > 0
+            else 0
+        )
+        if DEBUG:
+            logging.debug(
+                "Tageskontingent: %s, heutige Vergaben: %s, verbleibende Tage: %s",
+                tageskontingent,
+                heutige_gewinner,
+                verbleibende_tage,
+            )
+        tageslimit_erreicht = bool(tageskontingent and heutige_gewinner >= tageskontingent)
+
+        gewinnchance = 0 if tageslimit_erreicht else gewinnchance_ermitteln(user_id, heute, verbleibende_preise)
         if DEBUG:
             logging.debug(
                 "Gewinnchance für Benutzer %s am Tag %s: %s",
@@ -1173,7 +1248,11 @@ def oeffne_tuerchen(tag):
                 gewinnchance,
             )
 
-        if get_local_datetime().hour in gewinn_zeiten and random.random() < gewinnchance:
+        if (
+            not tageslimit_erreicht
+            and get_local_datetime().hour in gewinn_zeiten
+            and random.random() < gewinnchance
+        ):
             gewonnener_preis = reduce_prize(prizes, heute.day)
             if not gewonnener_preis or not gewonnener_preis.get("name"):
                 if DEBUG: logging.debug("Preis konnte nicht reduziert werden")
@@ -1184,6 +1263,7 @@ def oeffne_tuerchen(tag):
                         "Der Hauptpreis wird erst am 24. Dezember verlost."
                     )
                 return make_response(render_template_string(GENERIC_PAGE, content=hinweis))
+            increment_daily_awarded_prizes(heute)
             aktuelles_jahr = heute.year
             preis_name = gewonnener_preis.get("name", "")
             sponsor_name = str(gewonnener_preis.get("sponsor", "") or "").strip()
