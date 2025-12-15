@@ -313,6 +313,198 @@ def migrate_user_rewards_table(connection, existing_columns=None):
         connection.execute("PRAGMA foreign_keys = ON")
 
 
+def parse_winner_entry(line):
+    if not line:
+        return None
+
+    cleaned = line.strip()
+    if not cleaned or ":" not in cleaned or " - Tag " not in cleaned:
+        return None
+
+    user_part, remainder = cleaned.split(":", 1)
+    try:
+        user_id = int(user_part.strip())
+    except ValueError:
+        return None
+
+    display_and_rest = remainder.strip()
+    if " - Tag " not in display_and_rest:
+        return None
+
+    display_name, tag_segment = display_and_rest.split(" - Tag ", 1)
+    display_name = display_name.strip()
+    if not tag_segment:
+        return None
+
+    if " - " in tag_segment:
+        door_part, details_part = tag_segment.split(" - ", 1)
+    else:
+        door_part, details_part = tag_segment, ""
+
+    try:
+        door = int(door_part.strip())
+    except ValueError:
+        return None
+
+    details_segments = [segment.strip() for segment in details_part.split(" - ") if segment.strip()]
+    prize_name = details_segments[0] if details_segments else ""
+    if not prize_name:
+        return None
+
+    sponsor = None
+    year = None
+
+    for segment in details_segments[1:]:
+        if segment.lower().startswith("sponsor:"):
+            sponsor_value = segment.split(":", 1)[1].strip()
+            sponsor = sponsor_value or sponsor
+            continue
+        try:
+            year_candidate = int(segment)
+        except ValueError:
+            continue
+        if 1900 <= year_candidate <= 3000:
+            year = year_candidate
+
+    return {
+        "user_id": user_id,
+        "display_name": display_name or None,
+        "door": door,
+        "prize_name": prize_name,
+        "sponsor": sponsor,
+        "year": year,
+    }
+
+
+def ensure_user_exists(connection, user_id, display_name=None):
+    try:
+        cursor = connection.execute(
+            "SELECT id, email, display_name FROM users WHERE id = ?",
+            (user_id,),
+        )
+        row = cursor.fetchone()
+        if row:
+            return row["id"]
+    except sqlite3.DatabaseError as exc:
+        logging.error("Benutzer %s konnte nicht geprüft werden: %s", user_id, exc)
+        return None
+
+    try:
+        cursor = connection.execute("SELECT email FROM users")
+        existing_emails = {
+            normalise_email(item["email"])
+            for item in cursor.fetchall()
+            if normalise_email(item["email"])
+        }
+    except sqlite3.DatabaseError as exc:
+        logging.error("E-Mails für Platzhalter konnten nicht geladen werden: %s", exc)
+        existing_emails = set()
+
+    placeholder_email = generate_placeholder_email(existing_emails, user_id)
+    placeholder_display_name = (display_name or f"Benutzer {user_id}").strip()
+
+    try:
+        connection.execute(
+            "INSERT INTO users (id, email, display_name, password_hash) VALUES (?, ?, ?, '')",
+            (user_id, placeholder_email, placeholder_display_name),
+        )
+        return user_id
+    except sqlite3.DatabaseError as exc:
+        logging.error("Platzhalter-Benutzer %s konnte nicht angelegt werden: %s", user_id, exc)
+        return None
+
+
+def import_rewards_from_winners_file(connection=None, winners_file="gewinner.txt"):
+    if not os.path.exists(winners_file):
+        logging.info("0 Gewinne aus gewinner.txt übernommen (Datei nicht gefunden).")
+        return 0
+
+    close_connection = False
+    if connection is None:
+        connection = get_db_connection()
+        close_connection = True
+
+    try:
+        with open(winners_file, "r", encoding="utf-8") as file:
+            lines = file.readlines()
+    except OSError as exc:
+        logging.error("Gewinnerdatei konnte nicht gelesen werden: %s", exc)
+        if close_connection:
+            connection.close()
+        logging.info("0 Gewinne aus gewinner.txt übernommen (Dateilesefehler).")
+        return 0
+
+    try:
+        cursor = connection.execute("SELECT user_id, door FROM user_rewards")
+        existing_entries = {(int(row["user_id"]), int(row["door"])) for row in cursor.fetchall()}
+    except sqlite3.DatabaseError as exc:
+        logging.error("Bestehende Gewinne konnten nicht geladen werden: %s", exc)
+        existing_entries = set()
+
+    imported = 0
+
+    for line in lines:
+        parsed = parse_winner_entry(line)
+        if not parsed:
+            continue
+
+        user_id = parsed["user_id"]
+        door = parsed["door"]
+
+        if (user_id, door) in existing_entries:
+            continue
+
+        user_reference = ensure_user_exists(connection, user_id, parsed.get("display_name"))
+        if not user_reference:
+            continue
+
+        created_at = get_local_datetime()
+        parsed_year = parsed.get("year")
+        if parsed_year:
+            try:
+                created_at = datetime.datetime(
+                    parsed_year,
+                    12,
+                    max(min(int(door), 24), 1),
+                    12,
+                    0,
+                    tzinfo=local_timezone,
+                )
+            except ValueError:
+                created_at = get_local_datetime()
+
+        try:
+            connection.execute(
+                """
+                INSERT OR IGNORE INTO user_rewards (
+                    user_id, door, prize_name, sponsor, sponsor_link, qr_filename, qr_content, created_at
+                ) VALUES (?, ?, ?, ?, NULL, NULL, NULL, ?)
+                """,
+                (
+                    user_reference,
+                    door,
+                    parsed.get("prize_name"),
+                    parsed.get("sponsor"),
+                    created_at.isoformat(),
+                ),
+            )
+            if (user_id, door) not in existing_entries:
+                existing_entries.add((user_id, door))
+                imported += 1
+        except sqlite3.DatabaseError as exc:
+            logging.error(
+                "Gewinn für Benutzer %s und Tür %s konnte nicht importiert werden: %s",
+                user_id,
+                door,
+                exc,
+            )
+
+    if close_connection:
+        connection.close()
+
+    logging.info("%s Gewinne aus gewinner.txt übernommen.", imported)
+    return imported
+
 def init_user_db():
     try:
         with get_db_connection() as connection:
@@ -342,6 +534,8 @@ def init_user_db():
                 connection.execute(USER_REWARDS_TABLE_SQL)
             elif user_rewards_table_needs_migration(connection, user_reward_columns):
                 migrate_user_rewards_table(connection, user_reward_columns)
+
+            import_rewards_from_winners_file(connection)
     except sqlite3.DatabaseError as exc:
         logging.error("Fehler bei der Initialisierung der Benutzerdatenbank: %s", exc)
 
