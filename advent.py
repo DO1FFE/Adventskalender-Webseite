@@ -1404,6 +1404,19 @@ def oeffne_tuerchen(tag):
             except ValueError as exc:
                 logging.error("Ungültige Gewinninformationen: %s", exc)
                 reward_recorded = False
+            except Exception as exc:  # pragma: no cover - defensive logging path
+                logging.error("Beim Speichern des Gewinns ist ein Fehler aufgetreten: %s", exc)
+                reward_recorded = False
+
+            if not reward_recorded:
+                error_message = (
+                    "Leider ist beim Speichern deines Gewinns ein Fehler aufgetreten. "
+                    "Bitte versuche es erneut oder kontaktiere uns zur Bestätigung."
+                )
+                return make_response(
+                    render_template_string(GENERIC_PAGE, content=error_message),
+                    500,
+                )
             prize_label = escape(preis_name)
             sponsor_hint = Markup("")
             if sponsor_name:
@@ -1418,18 +1431,11 @@ def oeffne_tuerchen(tag):
                 else:
                     sponsor_hint = Markup(f" – Sponsor: {escaped_sponsor_name}")
             qr_filename_escaped = escape(qr_filename)
-            storage_note = Markup("")
-            if not reward_recorded:
-                storage_note = Markup(
-                    "<br><strong>Hinweis:</strong> Dein Gewinn konnte nicht dauerhaft gespeichert werden. "
-                    "Bitte sichere den QR-Code und kontaktiere uns zur Bestätigung."
-                )
-
             content = Markup(
                 f"Glückwunsch, {safe_display_name}! Du hast {prize_label}{sponsor_hint} gewonnen. "
                 f"<a href='/download_qr/{qr_filename_escaped}'>Lade deinen QR-Code herunter</a> "
                 f"oder sieh ihn dir <a href='/qr_codes/{qr_filename_escaped}'>hier an</a>."
-            ) + storage_note
+            )
             return make_response(render_template_string(GENERIC_PAGE, content=content))
         else:
             if DEBUG:
