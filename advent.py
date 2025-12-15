@@ -48,6 +48,21 @@ csrf.init_app(app)
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 USER_DATABASE = os.path.join(BASE_DIR, "users.db")
 ADMIN_EMAIL = "do1ffe@darc.de"
+USER_REWARDS_TABLE_SQL = """
+    CREATE TABLE IF NOT EXISTS user_rewards (
+        id INTEGER PRIMARY KEY,
+        user_id INTEGER NOT NULL,
+        door INTEGER NOT NULL,
+        prize_name TEXT NOT NULL,
+        sponsor TEXT,
+        sponsor_link TEXT,
+        qr_filename TEXT,
+        qr_content TEXT,
+        created_at TEXT NOT NULL,
+        UNIQUE(user_id, door),
+        FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+    )
+    """
 
 CSRF_ERROR_MESSAGE = (
     "Ungültiges oder fehlendes Sicherheits-Token. Bitte lade die Seite neu und "
@@ -200,6 +215,104 @@ def migrate_users_table(connection):
         connection.execute("PRAGMA foreign_keys = ON")
 
 
+def user_rewards_table_needs_migration(connection, columns=None):
+    try:
+        columns = columns or connection.execute("PRAGMA table_info(user_rewards)").fetchall()
+    except sqlite3.DatabaseError as exc:
+        logging.error("Gewinntabelle konnte nicht geprüft werden: %s", exc)
+        return False
+
+    if not columns:
+        return False
+
+    column_map = {column["name"]: column for column in columns}
+    required_columns = {
+        "user_id": 1,
+        "door": 1,
+        "prize_name": 1,
+        "sponsor": 0,
+        "sponsor_link": 0,
+        "qr_filename": 0,
+        "qr_content": 0,
+        "created_at": 1,
+    }
+
+    for column_name, not_null in required_columns.items():
+        column = column_map.get(column_name)
+        if not column:
+            return True
+        if not_null and column["notnull"] != not_null:
+            return True
+
+    return False
+
+
+def migrate_user_rewards_table(connection, existing_columns=None):
+    try:
+        columns = existing_columns or connection.execute("PRAGMA table_info(user_rewards)").fetchall()
+    except sqlite3.DatabaseError as exc:
+        logging.error("Gewinntabelle konnte nicht migriert werden: %s", exc)
+        raise
+
+    try:
+        connection.execute("PRAGMA foreign_keys = OFF")
+        connection.execute("ALTER TABLE user_rewards RENAME TO user_rewards_legacy")
+        connection.execute(
+            """
+            CREATE TABLE user_rewards (
+                id INTEGER PRIMARY KEY,
+                user_id INTEGER NOT NULL,
+                door INTEGER NOT NULL,
+                prize_name TEXT NOT NULL,
+                sponsor TEXT,
+                sponsor_link TEXT,
+                qr_filename TEXT,
+                qr_content TEXT,
+                created_at TEXT NOT NULL,
+                UNIQUE(user_id, door),
+                FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+            )
+            """
+        )
+
+        available_columns = {column["name"] for column in columns}
+        fallback_created_at = get_local_datetime().isoformat()
+
+        try:
+            cursor = connection.execute("SELECT * FROM user_rewards_legacy")
+            legacy_rows = cursor.fetchall()
+        except sqlite3.DatabaseError:
+            legacy_rows = []
+
+        for row in legacy_rows:
+            row_data = dict(row)
+            connection.execute(
+                """
+                INSERT INTO user_rewards (
+                    id, user_id, door, prize_name, sponsor, sponsor_link, qr_filename, qr_content, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    row_data.get("id"),
+                    row_data.get("user_id"),
+                    row_data.get("door"),
+                    row_data.get("prize_name"),
+                    row_data.get("sponsor") if "sponsor" in available_columns else None,
+                    row_data.get("sponsor_link") if "sponsor_link" in available_columns else None,
+                    row_data.get("qr_filename") if "qr_filename" in available_columns else None,
+                    row_data.get("qr_content") if "qr_content" in available_columns else None,
+                    row_data.get("created_at") or fallback_created_at,
+                ),
+            )
+
+        connection.execute("DROP TABLE user_rewards_legacy")
+    except sqlite3.DatabaseError as exc:
+        logging.error("Gewinntabelle konnte nicht migriert werden: %s", exc)
+        raise
+    finally:
+        connection.execute("PRAGMA foreign_keys = ON")
+
+
 def init_user_db():
     try:
         with get_db_connection() as connection:
@@ -219,23 +332,16 @@ def init_user_db():
             else:
                 sanitize_user_records(connection)
 
-            connection.execute(
-                """
-                CREATE TABLE IF NOT EXISTS user_rewards (
-                    id INTEGER PRIMARY KEY,
-                    user_id INTEGER NOT NULL,
-                    door INTEGER NOT NULL,
-                    prize_name TEXT NOT NULL,
-                    sponsor TEXT,
-                    sponsor_link TEXT,
-                    qr_filename TEXT,
-                    qr_content TEXT,
-                    created_at TEXT NOT NULL,
-                    UNIQUE(user_id, door),
-                    FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
-                )
-                """
-            )
+            try:
+                user_reward_columns = connection.execute("PRAGMA table_info(user_rewards)").fetchall()
+            except sqlite3.DatabaseError as exc:
+                logging.error("Gewinntabelle konnte nicht geprüft werden: %s", exc)
+                user_reward_columns = []
+
+            if not user_reward_columns:
+                connection.execute(USER_REWARDS_TABLE_SQL)
+            elif user_rewards_table_needs_migration(connection, user_reward_columns):
+                migrate_user_rewards_table(connection, user_reward_columns)
     except sqlite3.DatabaseError as exc:
         logging.error("Fehler bei der Initialisierung der Benutzerdatenbank: %s", exc)
 
@@ -554,7 +660,7 @@ def get_local_datetime():
 
 def record_user_reward(user_id, door, prize_name, sponsor=None, sponsor_link=None, qr_filename=None, qr_content=None):
     if not user_id or not prize_name:
-        return
+        raise ValueError("Ungültige Daten für den Gewinnspeichereintrag.")
     created_at = get_local_datetime().isoformat()
     try:
         with get_db_connection() as connection:
@@ -582,8 +688,10 @@ def record_user_reward(user_id, door, prize_name, sponsor=None, sponsor_link=Non
                     created_at,
                 ),
             )
+        return True
     except sqlite3.DatabaseError as exc:
         logging.error("Nutzergewinn konnte nicht gespeichert werden: %s", exc)
+        return False
 
 
 def get_user_rewards(user_id):
@@ -1283,15 +1391,19 @@ def oeffne_tuerchen(tag):
             os.makedirs('qr_codes', exist_ok=True)
             img.save(os.path.join('qr_codes', qr_filename))  # Speicherort korrigiert
             if DEBUG: logging.debug(f"QR-Code generiert und gespeichert: {qr_filename}")
-            record_user_reward(
-                user_id,
-                tag,
-                preis_name,
-                sponsor=sponsor_name,
-                sponsor_link=sponsor_link,
-                qr_filename=qr_filename,
-                qr_content=qr_content,
-            )
+            try:
+                reward_recorded = record_user_reward(
+                    user_id,
+                    tag,
+                    preis_name,
+                    sponsor=sponsor_name,
+                    sponsor_link=sponsor_link,
+                    qr_filename=qr_filename,
+                    qr_content=qr_content,
+                )
+            except ValueError as exc:
+                logging.error("Ungültige Gewinninformationen: %s", exc)
+                reward_recorded = False
             prize_label = escape(preis_name)
             sponsor_hint = Markup("")
             if sponsor_name:
@@ -1306,11 +1418,18 @@ def oeffne_tuerchen(tag):
                 else:
                     sponsor_hint = Markup(f" – Sponsor: {escaped_sponsor_name}")
             qr_filename_escaped = escape(qr_filename)
+            storage_note = Markup("")
+            if not reward_recorded:
+                storage_note = Markup(
+                    "<br><strong>Hinweis:</strong> Dein Gewinn konnte nicht dauerhaft gespeichert werden. "
+                    "Bitte sichere den QR-Code und kontaktiere uns zur Bestätigung."
+                )
+
             content = Markup(
                 f"Glückwunsch, {safe_display_name}! Du hast {prize_label}{sponsor_hint} gewonnen. "
                 f"<a href='/download_qr/{qr_filename_escaped}'>Lade deinen QR-Code herunter</a> "
                 f"oder sieh ihn dir <a href='/qr_codes/{qr_filename_escaped}'>hier an</a>."
-            )
+            ) + storage_note
             return make_response(render_template_string(GENERIC_PAGE, content=content))
         else:
             if DEBUG:
