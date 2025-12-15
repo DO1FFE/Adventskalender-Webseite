@@ -506,6 +506,7 @@ def import_rewards_from_winners_file(connection=None, winners_file="gewinner.txt
     return imported
 
 def init_user_db():
+    default_user_db = os.path.abspath(os.path.join(BASE_DIR, "users.db"))
     try:
         with get_db_connection() as connection:
             connection.execute(
@@ -535,12 +536,15 @@ def init_user_db():
             elif user_rewards_table_needs_migration(connection, user_reward_columns):
                 migrate_user_rewards_table(connection, user_reward_columns)
 
-            import_rewards_from_winners_file(connection)
+            if os.path.abspath(USER_DATABASE) == default_user_db:
+                import_rewards_from_winners_file(connection)
+            elif DEBUG:
+                logging.info(
+                    "Import der Gewinne wird übersprungen, da eine alternative Datenbank verwendet wird: %s",
+                    USER_DATABASE,
+                )
     except sqlite3.DatabaseError as exc:
         logging.error("Fehler bei der Initialisierung der Benutzerdatenbank: %s", exc)
-
-
-init_user_db()
 
 
 def validate_form_csrf(form):
@@ -850,6 +854,9 @@ def get_calendar_active():
 def get_local_datetime():
     utc_dt = datetime.datetime.now(pytz.utc)  # aktuelle Zeit in UTC
     return utc_dt.astimezone(local_timezone)  # konvertiere in lokale Zeitzone
+
+
+init_user_db()
 
 
 def record_user_reward(user_id, door, prize_name, sponsor=None, sponsor_link=None, qr_filename=None, qr_content=None):
@@ -1571,20 +1578,32 @@ def oeffne_tuerchen(tag):
             sponsor_name = str(gewonnener_preis.get("sponsor", "") or "").strip()
             sponsor_link = str(gewonnener_preis.get("sponsor_link", "") or "").strip()
             speichere_gewinner(user_id, display_name, tag, preis_name, jahr=aktuelles_jahr, sponsor=sponsor_name)
-            qr_content = f"{tag}-{display_name}-{user_id}-{preis_name}-OV L11-{aktuelles_jahr}"
-            qr = qrcode.QRCode(
-                version=1,
-                error_correction=qrcode.constants.ERROR_CORRECT_L,
-                box_size=10,
-                border=4,
+            error_message = (
+                "Leider ist beim Speichern deines Gewinns ein Fehler aufgetreten. "
+                "Bitte versuche es erneut oder kontaktiere uns zur Bestätigung."
             )
-            qr.add_data(qr_content)
-            qr.make(fit=True)
-            img = qr.make_image(fill_color="black", back_color="white")
-            qr_filename = f"user_{user_id}_{tag}.png"
-            os.makedirs('qr_codes', exist_ok=True)
-            img.save(os.path.join('qr_codes', qr_filename))  # Speicherort korrigiert
-            if DEBUG: logging.debug(f"QR-Code generiert und gespeichert: {qr_filename}")
+
+            qr_content = f"{tag}-{display_name}-{user_id}-{preis_name}-OV L11-{aktuelles_jahr}"
+            try:
+                qr = qrcode.QRCode(
+                    version=1,
+                    error_correction=qrcode.constants.ERROR_CORRECT_L,
+                    box_size=10,
+                    border=4,
+                )
+                qr.add_data(qr_content)
+                qr.make(fit=True)
+                img = qr.make_image(fill_color="black", back_color="white")
+                qr_filename = f"user_{user_id}_{tag}.png"
+                os.makedirs('qr_codes', exist_ok=True)
+                img.save(os.path.join('qr_codes', qr_filename))  # Speicherort korrigiert
+                if DEBUG: logging.debug(f"QR-Code generiert und gespeichert: {qr_filename}")
+            except Exception as exc:
+                logging.error("QR-Code konnte nicht erstellt werden: %s", exc)
+                return make_response(
+                    render_template_string(GENERIC_PAGE, content=error_message),
+                    500,
+                )
             try:
                 reward_recorded = record_user_reward(
                     user_id,
@@ -1603,10 +1622,6 @@ def oeffne_tuerchen(tag):
                 reward_recorded = False
 
             if not reward_recorded:
-                error_message = (
-                    "Leider ist beim Speichern deines Gewinns ein Fehler aufgetreten. "
-                    "Bitte versuche es erneut oder kontaktiere uns zur Bestätigung."
-                )
                 return make_response(
                     render_template_string(GENERIC_PAGE, content=error_message),
                     500,
