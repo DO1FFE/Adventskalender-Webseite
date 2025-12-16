@@ -47,6 +47,7 @@ csrf.init_app(app)
 
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 USER_DATABASE = os.path.join(BASE_DIR, "users.db")
+WINNERS_FILE = os.path.join(BASE_DIR, "gewinner.txt")
 ADMIN_EMAIL = "do1ffe@darc.de"
 USER_REWARDS_TABLE_SQL = """
     CREATE TABLE IF NOT EXISTS user_rewards (
@@ -414,8 +415,9 @@ def ensure_user_exists(connection, user_id, display_name=None):
         return None
 
 
-def import_rewards_from_winners_file(connection=None, winners_file="gewinner.txt"):
-    if not os.path.exists(winners_file):
+def import_rewards_from_winners_file(connection=None, winners_file=WINNERS_FILE):
+    winners_file_path = os.path.abspath(winners_file)
+    if not os.path.exists(winners_file_path):
         logging.info("0 Gewinne aus gewinner.txt übernommen (Datei nicht gefunden).")
         return 0
 
@@ -425,7 +427,7 @@ def import_rewards_from_winners_file(connection=None, winners_file="gewinner.txt
         close_connection = True
 
     try:
-        with open(winners_file, "r", encoding="utf-8") as file:
+        with open(winners_file_path, "r", encoding="utf-8") as file:
             lines = file.readlines()
     except OSError as exc:
         logging.error("Gewinnerdatei konnte nicht gelesen werden: %s", exc)
@@ -713,12 +715,13 @@ def cleanup_user_qr_codes(rewards):
 
 
 def remove_user_from_winners_file(user_id):
-    winners_file = "gewinner.txt"
-    if not os.path.exists(winners_file):
+    winners_file = WINNERS_FILE
+    winners_file_path = os.path.abspath(winners_file)
+    if not os.path.exists(winners_file_path):
         return False
 
     try:
-        with open(winners_file, "r", encoding="utf-8") as file:
+        with open(winners_file_path, "r", encoding="utf-8") as file:
             lines = file.readlines()
     except OSError as exc:
         logging.error("Gewinnerdatei konnte nicht gelesen werden: %s", exc)
@@ -731,7 +734,7 @@ def remove_user_from_winners_file(user_id):
         return False
 
     try:
-        with open(winners_file, "w", encoding="utf-8") as file:
+        with open(winners_file_path, "w", encoding="utf-8") as file:
             file.writelines(filtered_lines)
     except OSError as exc:
         logging.error("Gewinnerdatei konnte nicht aktualisiert werden: %s", exc)
@@ -1173,9 +1176,10 @@ def parse_prize_configuration(prize_data):
 def hat_gewonnen(user_identifier):
     """Überprüft, ob der Benutzer bereits gewonnen hat."""
     user_identifier = str(user_identifier)
-    if not os.path.exists("gewinner.txt"):
+    winners_file_path = os.path.abspath(WINNERS_FILE)
+    if not os.path.exists(winners_file_path):
         return False
-    with open("gewinner.txt", "r", encoding="utf-8") as file:
+    with open(winners_file_path, "r", encoding="utf-8") as file:
         for line in file:
             line = line.strip()
             if not line:
@@ -1253,7 +1257,7 @@ def speichere_gewinner(user_identifier, display_name, tag, preis, jahr=None, spo
     sponsor_text = ""
     if sponsor:
         sponsor_text = f" - Sponsor: {str(sponsor).strip()}"
-    with open("gewinner.txt", "a", encoding="utf-8") as file:
+    with open(WINNERS_FILE, "a", encoding="utf-8") as file:
         file.write(
             f"{user_identifier}:{display_name} - Tag {tag} - {preis}{sponsor_text} - OV L11 - {jahr}\n"
         )
@@ -4318,7 +4322,7 @@ def admin_page():
 
         elif action == 'reset_gewinner':
             try:
-                with open('gewinner.txt', 'w', encoding='utf-8'):
+                with open(WINNERS_FILE, 'w', encoding='utf-8'):
                     pass
                 message = "Gewinnerliste wurde geleert."
             except OSError as exc:
@@ -4361,7 +4365,7 @@ def admin_page():
         qr_files = sorted(os.listdir('qr_codes'))
 
     teilnehmer_inhalt = lese_datei('teilnehmer.txt', 'Keine Teilnehmerdaten vorhanden.')
-    gewinner_inhalt = lese_datei('gewinner.txt', 'Keine Gewinnerdaten vorhanden.')
+    gewinner_inhalt = lese_datei(WINNERS_FILE, 'Keine Gewinnerdaten vorhanden.')
 
     return render_template_string(
         ADMIN_PAGE,
