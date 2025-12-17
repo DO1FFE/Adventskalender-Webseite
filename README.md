@@ -32,6 +32,26 @@ Dieses Repository enthält den Code für einen digitalen Adventskalender, spezie
 
 > Hinweis: Die SQLite-Datenbank `users.db` wird bei Bedarf automatisch im Projektverzeichnis angelegt und ist daher nicht im Repository enthalten.
 
+### Import von Gewinnern
+
+- Beim Einlesen der Datei `gewinner.txt` werden vorhandene Nutzer anhand stabiler Merkmale gesucht, bevor Platzhalter-Konten angelegt werden. Dafür werden die E-Mail-Adresse (falls in der Gewinnerzeile mit `email:` hinterlegt), der Display-Name sowie optionale Einträge in `gewinner_user_mapping.json` genutzt.
+- Die optionale Mapping-Datei kann entweder eine Liste oder ein Objekt mit dem Schlüssel `mappings` enthalten. Jedes Mapping unterstützt die Felder `winner_id` (alte ID aus `gewinner.txt`), `display_name`, `email` und die Ziel-`user_id`.
+- Formatbeispiel:
+
+  ```json
+  {
+    "mappings": [
+      {"winner_id": 42, "user_id": 7},
+      {"display_name": "Max Mustermann", "user_id": 5},
+      {"email": "max@example.com", "user_id": 5}
+    ]
+  }
+  ```
+
+### Wartung: Platzhalter bereinigen
+
+- Bereits importierte Gewinne können mit `python advent.py migrate_placeholder_rewards` auf erkannte echte Nutzer-IDs umgehängt werden. Dabei werden Platzhalter-Accounts mit `@example.invalid` entfernt, sobald keine Gewinne mehr auf sie verweisen.
+
 ## Konfiguration
 
 - Sie können die Uhrzeiten für die Gewinnvergabe in der Datei `advent.py` anpassen.

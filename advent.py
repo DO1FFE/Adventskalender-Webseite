@@ -12,6 +12,7 @@ import math
 import pytz
 import shutil
 import sqlite3
+import sys
 from urllib.parse import urlparse
 from flask import (
     Flask,
@@ -48,6 +49,7 @@ csrf.init_app(app)
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 USER_DATABASE = os.path.join(BASE_DIR, "users.db")
 WINNERS_FILE = os.path.join(BASE_DIR, "gewinner.txt")
+WINNER_USER_MAPPING_FILE = os.path.join(BASE_DIR, "gewinner_user_mapping.json")
 ADMIN_EMAIL = "do1ffe@darc.de"
 USER_REWARDS_TABLE_SQL = """
     CREATE TABLE IF NOT EXISTS user_rewards (
@@ -90,6 +92,16 @@ def normalise_email(email):
     if email is None:
         return ""
     return email.strip().lower()
+
+
+def normalise_display_name(display_name):
+    if display_name is None:
+        return ""
+    return " ".join(display_name.split()).strip().lower()
+
+
+def is_placeholder_email(email):
+    return normalise_email(email).endswith("@example.invalid")
 
 
 def generate_placeholder_email(existing_emails, user_id):
@@ -354,8 +366,19 @@ def parse_winner_entry(line):
 
     sponsor = None
     year = None
+    email = None
 
     for segment in details_segments[1:]:
+        if ":" in segment:
+            key, value = segment.split(":", 1)
+            key = key.strip().lower()
+            value = value.strip()
+            if key in {"sponsor", "sponsorin"}:
+                sponsor = value or sponsor
+                continue
+            if key in {"email", "e-mail"} and value:
+                email = value
+                continue
         if segment.lower().startswith("sponsor:"):
             sponsor_value = segment.split(":", 1)[1].strip()
             sponsor = sponsor_value or sponsor
@@ -370,6 +393,7 @@ def parse_winner_entry(line):
     return {
         "user_id": user_id,
         "display_name": display_name or None,
+        "email": email,
         "door": door,
         "prize_name": prize_name,
         "sponsor": sponsor,
@@ -377,29 +401,107 @@ def parse_winner_entry(line):
     }
 
 
-def ensure_user_exists(connection, user_id, display_name=None):
-    try:
-        cursor = connection.execute(
-            "SELECT id, email, display_name FROM users WHERE id = ?",
-            (user_id,),
-        )
-        row = cursor.fetchone()
-        if row:
-            return row["id"]
-    except sqlite3.DatabaseError as exc:
-        logging.error("Benutzer %s konnte nicht geprüft werden: %s", user_id, exc)
-        return None
+def load_winner_user_mapping(mapping_file=WINNER_USER_MAPPING_FILE):
+    if not os.path.exists(mapping_file):
+        return []
 
     try:
-        cursor = connection.execute("SELECT email FROM users")
-        existing_emails = {
-            normalise_email(item["email"])
-            for item in cursor.fetchall()
-            if normalise_email(item["email"])
-        }
+        with open(mapping_file, "r", encoding="utf-8") as mapping_handle:
+            data = json.load(mapping_handle)
+    except (OSError, json.JSONDecodeError) as exc:
+        logging.error("Mapping-Datei %s konnte nicht geladen werden: %s", mapping_file, exc)
+        return []
+
+    if isinstance(data, dict) and "mappings" in data and isinstance(data["mappings"], list):
+        return data["mappings"]
+
+    if isinstance(data, list):
+        return data
+
+    logging.error("Mapping-Datei %s hat ein unerwartetes Format.", mapping_file)
+    return []
+
+
+def build_user_lookup(connection):
+    lookup = {"by_id": {}, "by_email": {}, "by_display": {}}
+
+    try:
+        cursor = connection.execute("SELECT id, email, display_name FROM users")
     except sqlite3.DatabaseError as exc:
-        logging.error("E-Mails für Platzhalter konnten nicht geladen werden: %s", exc)
-        existing_emails = set()
+        logging.error("Benutzer konnten nicht geladen werden: %s", exc)
+        return lookup
+
+    for row in cursor.fetchall():
+        lookup["by_id"][int(row["id"])] = row["id"]
+
+        email = normalise_email(row["email"])
+        if email:
+            lookup["by_email"].setdefault(email, row["id"])
+
+        display_name = normalise_display_name(row["display_name"])
+        if display_name:
+            lookup["by_display"].setdefault(display_name, row["id"])
+
+    return lookup
+
+
+def resolve_user_id_from_identity(user_lookup, mappings, *, winner_id=None, email=None, display_name=None):
+    normalised_email = normalise_email(email)
+    normalised_display = normalise_display_name(display_name)
+
+    for entry in mappings:
+        target_user_id = entry.get("user_id")
+        if not target_user_id:
+            continue
+
+        try:
+            target_user_id = int(target_user_id)
+        except (TypeError, ValueError):
+            continue
+
+        winner_match = entry.get("winner_id")
+        if winner_id is not None and winner_match is not None:
+            try:
+                if int(winner_match) == int(winner_id):
+                    return target_user_id if target_user_id in user_lookup.get("by_id", {}) else None
+            except (TypeError, ValueError):
+                pass
+
+        mapped_email = normalise_email(entry.get("email"))
+        if normalised_email and mapped_email and mapped_email == normalised_email:
+            return target_user_id if target_user_id in user_lookup.get("by_id", {}) else None
+
+        mapped_display = normalise_display_name(entry.get("display_name"))
+        if normalised_display and mapped_display and mapped_display == normalised_display:
+            return target_user_id if target_user_id in user_lookup.get("by_id", {}) else None
+
+    if normalised_email and normalised_email in user_lookup.get("by_email", {}):
+        return user_lookup["by_email"][normalised_email]
+
+    if normalised_display and normalised_display in user_lookup.get("by_display", {}):
+        return user_lookup["by_display"][normalised_display]
+
+    return None
+
+
+def ensure_user_exists(connection, user_id, display_name=None, email=None, user_lookup=None, mappings=None):
+    user_lookup = user_lookup or build_user_lookup(connection)
+    mappings = mappings or []
+
+    if user_lookup.get("by_id") and user_id in user_lookup["by_id"]:
+        return user_lookup["by_id"][user_id]
+
+    resolved_id = resolve_user_id_from_identity(
+        user_lookup,
+        mappings,
+        winner_id=user_id,
+        email=email,
+        display_name=display_name,
+    )
+    if resolved_id:
+        return resolved_id
+
+    existing_emails = set(user_lookup.get("by_email", {}).keys())
 
     placeholder_email = generate_placeholder_email(existing_emails, user_id)
     placeholder_display_name = (display_name or f"Benutzer {user_id}").strip()
@@ -409,6 +511,9 @@ def ensure_user_exists(connection, user_id, display_name=None):
             "INSERT INTO users (id, email, display_name, password_hash) VALUES (?, ?, ?, '')",
             (user_id, placeholder_email, placeholder_display_name),
         )
+        user_lookup.setdefault("by_id", {})[user_id] = user_id
+        user_lookup.setdefault("by_email", {})[normalise_email(placeholder_email)] = user_id
+        user_lookup.setdefault("by_display", {})[normalise_display_name(placeholder_display_name)] = user_id
         return user_id
     except sqlite3.DatabaseError as exc:
         logging.error("Platzhalter-Benutzer %s konnte nicht angelegt werden: %s", user_id, exc)
@@ -443,6 +548,9 @@ def import_rewards_from_winners_file(connection=None, winners_file=WINNERS_FILE)
         logging.error("Bestehende Gewinne konnten nicht geladen werden: %s", exc)
         existing_entries = set()
 
+    user_lookup = build_user_lookup(connection)
+    winner_mappings = load_winner_user_mapping()
+
     imported = 0
 
     for line in lines:
@@ -453,11 +561,18 @@ def import_rewards_from_winners_file(connection=None, winners_file=WINNERS_FILE)
         user_id = parsed["user_id"]
         door = parsed["door"]
 
-        if (user_id, door) in existing_entries:
+        user_reference = ensure_user_exists(
+            connection,
+            user_id,
+            parsed.get("display_name"),
+            parsed.get("email"),
+            user_lookup=user_lookup,
+            mappings=winner_mappings,
+        )
+        if not user_reference:
             continue
 
-        user_reference = ensure_user_exists(connection, user_id, parsed.get("display_name"))
-        if not user_reference:
+        if (user_reference, door) in existing_entries:
             continue
 
         created_at = get_local_datetime()
@@ -490,8 +605,8 @@ def import_rewards_from_winners_file(connection=None, winners_file=WINNERS_FILE)
                     created_at.isoformat(),
                 ),
             )
-            if (user_id, door) not in existing_entries:
-                existing_entries.add((user_id, door))
+            if (user_reference, door) not in existing_entries:
+                existing_entries.add((user_reference, door))
                 imported += 1
         except sqlite3.DatabaseError as exc:
             logging.error(
@@ -506,6 +621,86 @@ def import_rewards_from_winners_file(connection=None, winners_file=WINNERS_FILE)
 
     logging.info("%s Gewinne aus gewinner.txt übernommen.", imported)
     return imported
+
+
+def migrate_placeholder_user_rewards(connection=None, mapping_file=WINNER_USER_MAPPING_FILE):
+    close_connection = False
+    if connection is None:
+        connection = get_db_connection()
+        close_connection = True
+
+    migrated_rewards = 0
+    removed_placeholders = 0
+
+    user_lookup = build_user_lookup(connection)
+    mappings = load_winner_user_mapping(mapping_file)
+
+    try:
+        cursor = connection.execute("SELECT id, email, display_name FROM users")
+        placeholder_users = [
+            dict(row)
+            for row in cursor.fetchall()
+            if is_placeholder_email(row["email"])
+        ]
+    except sqlite3.DatabaseError as exc:
+        logging.error("Platzhalter konnten nicht ermittelt werden: %s", exc)
+        placeholder_users = []
+
+    for placeholder in placeholder_users:
+        placeholder_id = int(placeholder.get("id"))
+        if placeholder_id not in user_lookup.get("by_id", {}):
+            continue
+
+        target_user_id = resolve_user_id_from_identity(
+            user_lookup,
+            mappings,
+            winner_id=placeholder_id,
+            email=placeholder.get("email"),
+            display_name=placeholder.get("display_name"),
+        )
+
+        if not target_user_id or target_user_id == placeholder_id:
+            continue
+
+        try:
+            cursor = connection.execute(
+                "UPDATE user_rewards SET user_id = ? WHERE user_id = ?",
+                (target_user_id, placeholder_id),
+            )
+            migrated_rewards += cursor.rowcount or 0
+        except sqlite3.DatabaseError as exc:
+            logging.error(
+                "Gewinne von Platzhalter %s konnten nicht umgehängt werden: %s",
+                placeholder_id,
+                exc,
+            )
+            continue
+
+        try:
+            remaining = connection.execute(
+                "SELECT COUNT(*) FROM user_rewards WHERE user_id = ?",
+                (placeholder_id,),
+            ).fetchone()[0]
+        except sqlite3.DatabaseError as exc:
+            logging.error(
+                "Prüfung auf verbleibende Gewinne für Platzhalter %s fehlgeschlagen: %s",
+                placeholder_id,
+                exc,
+            )
+            remaining = None
+
+        if remaining == 0:
+            try:
+                connection.execute("DELETE FROM users WHERE id = ?", (placeholder_id,))
+                user_lookup.get("by_id", {}).pop(placeholder_id, None)
+                removed_placeholders += 1
+            except sqlite3.DatabaseError as exc:
+                logging.error("Platzhalter %s konnte nicht gelöscht werden: %s", placeholder_id, exc)
+
+    if close_connection:
+        connection.close()
+
+    return migrated_rewards, removed_placeholders
 
 def init_user_db():
     default_user_db = os.path.abspath(os.path.join(BASE_DIR, "users.db"))
@@ -4822,6 +5017,14 @@ ADMIN_PAGE = '''
 '''
 
 if __name__ == '__main__':
+    if len(sys.argv) > 1 and sys.argv[1] == "migrate_placeholder_rewards":
+        migrated, removed = migrate_placeholder_user_rewards()
+        print(
+            f"Migrierte Gewinne: {migrated}, gelöschte Platzhalter: {removed}",
+            flush=True,
+        )
+        sys.exit(0)
+
     if not os.path.exists('qr_codes'):
         os.makedirs('qr_codes')
 
