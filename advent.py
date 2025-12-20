@@ -257,7 +257,31 @@ def user_rewards_table_needs_migration(connection, columns=None):
         if not_null and column["notnull"] != not_null:
             return True
 
-    return False
+    try:
+        indexes = connection.execute("PRAGMA index_list('user_rewards')").fetchall()
+    except sqlite3.DatabaseError as exc:
+        logging.error("Indexinformationen der Gewinntabelle konnten nicht geladen werden: %s", exc)
+        return False
+
+    for index in indexes:
+        if not index["unique"]:
+            continue
+        index_name = index["name"]
+        if not index_name:
+            continue
+        try:
+            index_info = connection.execute(f"PRAGMA index_info('{index_name}')").fetchall()
+        except sqlite3.DatabaseError as exc:
+            logging.error("Details zum Index %s konnten nicht geladen werden: %s", index_name, exc)
+            continue
+
+        index_columns = [entry["name"] for entry in index_info]
+        if len(index_columns) == 2 and set(index_columns) == {"user_id", "door"}:
+            return False
+
+    if DEBUG:
+        logging.debug("Gewinntabelle benötigt Migration: fehlender UNIQUE-Index auf (user_id, door)")
+    return True
 
 
 def migrate_user_rewards_table(connection, existing_columns=None):
