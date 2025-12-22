@@ -350,6 +350,63 @@ def migrate_user_rewards_table(connection, existing_columns=None):
         connection.execute("PRAGMA foreign_keys = ON")
 
 
+def has_user_rewards_unique_constraint(connection, indexes=None):
+    try:
+        indexes = indexes or connection.execute("PRAGMA index_list('user_rewards')").fetchall()
+    except sqlite3.DatabaseError as exc:
+        logging.error("Indexinformationen der Gewinntabelle konnten nicht geladen werden: %s", exc)
+        return False
+
+    for index in indexes:
+        if not index["unique"]:
+            continue
+        index_name = index["name"]
+        if not index_name:
+            continue
+        try:
+            index_info = connection.execute(f"PRAGMA index_info('{index_name}')").fetchall()
+        except sqlite3.DatabaseError as exc:
+            logging.error("Details zum Index %s konnten nicht geladen werden: %s", index_name, exc)
+            continue
+
+        index_columns = [entry["name"] for entry in index_info]
+        if len(index_columns) == 2 and set(index_columns) == {"user_id", "door"}:
+            return True
+
+    return False
+
+
+def ensure_user_rewards_unique_constraint(connection):
+    try:
+        columns = connection.execute("PRAGMA table_info(user_rewards)").fetchall()
+    except sqlite3.DatabaseError as exc:
+        logging.error("Gewinntabelle konnte nicht geprüft werden: %s", exc)
+        return False
+
+    if not columns:
+        try:
+            connection.execute(USER_REWARDS_TABLE_SQL)
+            columns = connection.execute("PRAGMA table_info(user_rewards)").fetchall()
+        except sqlite3.DatabaseError as exc:
+            logging.error("Gewinntabelle konnte nicht erstellt werden: %s", exc)
+            return False
+
+    if user_rewards_table_needs_migration(connection, columns):
+        try:
+            migrate_user_rewards_table(connection, columns)
+        except sqlite3.DatabaseError as exc:
+            logging.error("Migration der Gewinntabelle fehlgeschlagen: %s", exc)
+            return False
+
+    try:
+        indexes = connection.execute("PRAGMA index_list('user_rewards')").fetchall()
+    except sqlite3.DatabaseError as exc:
+        logging.error("Indexinformationen der Gewinntabelle konnten nicht geladen werden: %s", exc)
+        return False
+
+    return has_user_rewards_unique_constraint(connection, indexes)
+
+
 def parse_winner_entry(line):
     if not line:
         return None
@@ -746,16 +803,8 @@ def init_user_db():
             else:
                 sanitize_user_records(connection)
 
-            try:
-                user_reward_columns = connection.execute("PRAGMA table_info(user_rewards)").fetchall()
-            except sqlite3.DatabaseError as exc:
-                logging.error("Gewinntabelle konnte nicht geprüft werden: %s", exc)
-                user_reward_columns = []
-
-            if not user_reward_columns:
-                connection.execute(USER_REWARDS_TABLE_SQL)
-            elif user_rewards_table_needs_migration(connection, user_reward_columns):
-                migrate_user_rewards_table(connection, user_reward_columns)
+            if not ensure_user_rewards_unique_constraint(connection):
+                logging.error("UNIQUE-Constraint auf user_rewards konnte nicht sichergestellt werden.")
 
             if os.path.abspath(USER_DATABASE) == default_user_db:
                 import_rewards_from_winners_file(connection)
@@ -1087,30 +1136,72 @@ def record_user_reward(user_id, door, prize_name, sponsor=None, sponsor_link=Non
     created_at = get_local_datetime().isoformat()
     try:
         with get_db_connection() as connection:
-            connection.execute(
-                """
-                INSERT INTO user_rewards (
-                    user_id, door, prize_name, sponsor, sponsor_link, qr_filename, qr_content, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(user_id, door) DO UPDATE SET
-                    prize_name=excluded.prize_name,
-                    sponsor=excluded.sponsor,
-                    sponsor_link=excluded.sponsor_link,
-                    qr_filename=excluded.qr_filename,
-                    qr_content=excluded.qr_content,
-                    created_at=excluded.created_at
-                """,
-                (
-                    int(user_id),
-                    int(door),
-                    str(prize_name).strip(),
-                    str(sponsor or "").strip() or None,
-                    str(sponsor_link or "").strip() or None,
-                    str(qr_filename or "").strip() or None,
-                    str(qr_content or "").strip() or None,
-                    created_at,
-                ),
-            )
+            has_unique = ensure_user_rewards_unique_constraint(connection)
+            user_id_int = int(user_id)
+            door_int = int(door)
+            prize_name_clean = str(prize_name).strip()
+            sponsor_clean = str(sponsor or "").strip() or None
+            sponsor_link_clean = str(sponsor_link or "").strip() or None
+            qr_filename_clean = str(qr_filename or "").strip() or None
+            qr_content_clean = str(qr_content or "").strip() or None
+
+            if has_unique:
+                connection.execute(
+                    """
+                    INSERT INTO user_rewards (
+                        user_id, door, prize_name, sponsor, sponsor_link, qr_filename, qr_content, created_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(user_id, door) DO UPDATE SET
+                        prize_name=excluded.prize_name,
+                        sponsor=excluded.sponsor,
+                        sponsor_link=excluded.sponsor_link,
+                        qr_filename=excluded.qr_filename,
+                        qr_content=excluded.qr_content,
+                        created_at=excluded.created_at
+                    """,
+                    (
+                        user_id_int,
+                        door_int,
+                        prize_name_clean,
+                        sponsor_clean,
+                        sponsor_link_clean,
+                        qr_filename_clean,
+                        qr_content_clean,
+                        created_at,
+                    ),
+                )
+            else:
+                try:
+                    existing_id_row = connection.execute(
+                        """
+                        SELECT id FROM user_rewards
+                        WHERE user_id = ? AND door = ?
+                        ORDER BY id LIMIT 1
+                        """,
+                        (user_id_int, door_int),
+                    ).fetchone()
+                    existing_id = existing_id_row[0] if existing_id_row else None
+                except sqlite3.DatabaseError:
+                    existing_id = None
+
+                connection.execute(
+                    """
+                    INSERT OR REPLACE INTO user_rewards (
+                        id, user_id, door, prize_name, sponsor, sponsor_link, qr_filename, qr_content, created_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        existing_id,
+                        user_id_int,
+                        door_int,
+                        prize_name_clean,
+                        sponsor_clean,
+                        sponsor_link_clean,
+                        qr_filename_clean,
+                        qr_content_clean,
+                        created_at,
+                    ),
+                )
         return True
     except sqlite3.DatabaseError as exc:
         logging.error("Nutzergewinn konnte nicht gespeichert werden: %s", exc)
