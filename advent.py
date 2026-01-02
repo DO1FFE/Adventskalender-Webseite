@@ -1985,14 +1985,64 @@ def oeffne_tuerchen(tag):
 @app.route('/download_qr/<filename>', methods=['GET'])
 def download_qr(filename):
     if DEBUG: logging.debug(f"Download-Anfrage für QR-Code: {filename}")
-    if not session.get('user_id'):
+    user_id = session.get('user_id')
+    if not user_id:
         return redirect(url_for('login'))
+    user = get_user_by_id(user_id)
+    if not user:
+        session.clear()
+        return redirect(url_for('login'))
+    if not is_admin_user(user):
+        with get_db_connection() as connection:
+            cursor = connection.execute(
+                "SELECT 1 FROM user_rewards WHERE user_id = ? AND qr_filename = ? LIMIT 1",
+                (user_id, filename),
+            )
+            if not cursor.fetchone():
+                if DEBUG:
+                    logging.debug(
+                        "QR-Code Zugriff verweigert für Benutzer %s (Datei: %s)",
+                        user_id,
+                        filename,
+                    )
+                return make_response(
+                    render_template_string(
+                        GENERIC_PAGE,
+                        content="Zugriff auf diesen QR-Code ist nicht erlaubt.",
+                    ),
+                    403,
+                )
     return send_from_directory('qr_codes', filename, as_attachment=True)
 
 @app.route('/qr_codes/<filename>')
 def qr_code(filename):
-    if not session.get('user_id'):
+    user_id = session.get('user_id')
+    if not user_id:
         return redirect(url_for('login'))
+    user = get_user_by_id(user_id)
+    if not user:
+        session.clear()
+        return redirect(url_for('login'))
+    if not is_admin_user(user):
+        with get_db_connection() as connection:
+            cursor = connection.execute(
+                "SELECT 1 FROM user_rewards WHERE user_id = ? AND qr_filename = ? LIMIT 1",
+                (user_id, filename),
+            )
+            if not cursor.fetchone():
+                if DEBUG:
+                    logging.debug(
+                        "QR-Code Anzeige verweigert für Benutzer %s (Datei: %s)",
+                        user_id,
+                        filename,
+                    )
+                return make_response(
+                    render_template_string(
+                        GENERIC_PAGE,
+                        content="Zugriff auf diesen QR-Code ist nicht erlaubt.",
+                    ),
+                    403,
+                )
     return send_from_directory('qr_codes', filename)
 
 # Route für das Ausliefern von Event-Graphen hinzufügen
