@@ -132,6 +132,7 @@ def sanitize_user_records(connection):
         for row in rows
         if normalise_email(row["email"])
     }
+    seen_emails = set()
 
     sanitized = 0
 
@@ -147,9 +148,17 @@ def sanitize_user_records(connection):
             email = generate_placeholder_email(existing_emails, row["id"])
             needs_update = True
         else:
-            existing_emails.add(email)
-            if raw_email != email:
+            if email in seen_emails:
+                email = generate_placeholder_email(existing_emails, row["id"])
                 needs_update = True
+                logging.info(
+                    "Benutzer %s erhielt eine Platzhalter-E-Mail wegen Duplikat.",
+                    row["id"],
+                )
+            elif raw_email != email:
+                needs_update = True
+        existing_emails.add(email)
+        seen_emails.add(email)
 
         if not display_name:
             display_name = email or f"Benutzer {row['id']}"
