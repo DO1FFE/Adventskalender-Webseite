@@ -1527,18 +1527,73 @@ def parse_prize_configuration(prize_data):
 def hat_gewonnen(user_identifier):
     """Überprüft, ob der Benutzer bereits gewonnen hat."""
     user_identifier = str(user_identifier)
+    user_identifier_int = None
+    try:
+        user_identifier_int = int(user_identifier)
+    except (TypeError, ValueError):
+        pass
+
+    user_lookup = {"by_id": {}, "by_email": {}, "by_display": {}}
+    winner_mappings = []
+
+    try:
+        with get_db_connection() as connection:
+            cursor = connection.execute(
+                "SELECT 1 FROM user_rewards WHERE user_id = ? LIMIT 1",
+                (user_identifier,),
+            )
+            if cursor.fetchone():
+                return True
+
+            user_lookup = build_user_lookup(connection)
+            winner_mappings = load_winner_user_mapping(WINNER_USER_MAPPING_FILE)
+    except sqlite3.DatabaseError as exc:
+        logging.error("Gewinnstatus konnte nicht aus der Datenbank geprüft werden: %s", exc)
+
     winners_file_path = os.path.abspath(WINNERS_FILE)
     if not os.path.exists(winners_file_path):
         return False
+
     with open(winners_file_path, "r", encoding="utf-8") as file:
         for line in file:
             line = line.strip()
             if not line:
                 continue
+
             prefix = line.split(" ", 1)[0]
             prefix_id = prefix.split(":", 1)[0]
             if prefix_id == user_identifier:
                 return True
+
+            if user_identifier_int is None:
+                continue
+
+            parsed_entry = parse_winner_entry(line)
+            mapped_user_id = None
+
+            if parsed_entry:
+                mapped_user_id = resolve_user_id_from_identity(
+                    user_lookup,
+                    winner_mappings,
+                    winner_id=parsed_entry.get("user_id"),
+                    email=parsed_entry.get("email"),
+                    display_name=parsed_entry.get("display_name"),
+                )
+            else:
+                try:
+                    legacy_winner_id = int(prefix_id)
+                except ValueError:
+                    legacy_winner_id = None
+                if legacy_winner_id is not None:
+                    mapped_user_id = resolve_user_id_from_identity(
+                        user_lookup,
+                        winner_mappings,
+                        winner_id=legacy_winner_id,
+                    )
+
+            if mapped_user_id == user_identifier_int:
+                return True
+
     return False
 
 
