@@ -13,6 +13,8 @@ import pytz
 import shutil
 import sqlite3
 import sys
+import tempfile
+import fcntl
 from urllib.parse import urlparse
 from flask import (
     Flask,
@@ -49,6 +51,7 @@ csrf.init_app(app)
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 USER_DATABASE = os.path.join(BASE_DIR, "users.db")
 WINNERS_FILE = os.path.join(BASE_DIR, "gewinner.txt")
+PARTICIPANTS_FILE = os.path.join(BASE_DIR, "teilnehmer.txt")
 WINNER_USER_MAPPING_FILE = os.path.join(BASE_DIR, "gewinner_user_mapping.json")
 ADMIN_EMAIL = "do1ffe@darc.de"
 USER_REWARDS_TABLE_SQL = """
@@ -82,10 +85,56 @@ def get_db_connection():
     connection = sqlite3.connect(USER_DATABASE)
     connection.row_factory = sqlite3.Row
     try:
+        connection.execute("PRAGMA busy_timeout = 5000")
         connection.execute("PRAGMA foreign_keys = ON")
     except sqlite3.DatabaseError as exc:
-        logging.error("PRAGMA foreign_keys konnte nicht gesetzt werden: %s", exc)
+        logging.error("PRAGMA-Einstellungen konnten nicht gesetzt werden: %s", exc)
     return connection
+
+
+def atomisch_schreiben(dateipfad, inhalt):
+    """Schreibt Dateiinhalt atomisch über eine temporäre Datei."""
+    zielpfad = os.path.abspath(dateipfad)
+    zielordner = os.path.dirname(zielpfad) or "."
+    os.makedirs(zielordner, exist_ok=True)
+    descriptor, temp_pfad = tempfile.mkstemp(prefix=".tmp-", dir=zielordner, text=True)
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as temp_datei:
+            temp_datei.write(inhalt)
+            temp_datei.flush()
+            os.fsync(temp_datei.fileno())
+        os.replace(temp_pfad, zielpfad)
+    finally:
+        if os.path.exists(temp_pfad):
+            os.remove(temp_pfad)
+
+
+def lese_datei_mit_shared_lock(dateipfad):
+    dateipfad = os.path.abspath(dateipfad)
+    if not os.path.exists(dateipfad):
+        return []
+    with open(dateipfad, "r", encoding="utf-8") as datei:
+        fcntl.flock(datei.fileno(), fcntl.LOCK_SH)
+        try:
+            return datei.readlines()
+        finally:
+            fcntl.flock(datei.fileno(), fcntl.LOCK_UN)
+
+
+def aktualisiere_datei_mit_exclusive_lock(dateipfad, updater_funktion):
+    dateipfad = os.path.abspath(dateipfad)
+    lock_pfad = f"{dateipfad}.lock"
+    lock_ordner = os.path.dirname(lock_pfad) or "."
+    os.makedirs(lock_ordner, exist_ok=True)
+    with open(lock_pfad, "a", encoding="utf-8") as lock_datei:
+        fcntl.flock(lock_datei.fileno(), fcntl.LOCK_EX)
+        try:
+            bestehende_zeilen = lese_datei_mit_shared_lock(dateipfad)
+            neue_zeilen = updater_funktion(bestehende_zeilen)
+            if neue_zeilen is not None:
+                atomisch_schreiben(dateipfad, "".join(neue_zeilen))
+        finally:
+            fcntl.flock(lock_datei.fileno(), fcntl.LOCK_UN)
 
 
 def normalise_email(email):
@@ -815,6 +864,32 @@ def init_user_db():
             if not ensure_user_rewards_unique_constraint(connection):
                 logging.error("UNIQUE-Constraint auf user_rewards konnte nicht sichergestellt werden.")
 
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS participant_entries (
+                    user_id TEXT NOT NULL,
+                    display_name TEXT NOT NULL,
+                    door INTEGER NOT NULL,
+                    created_at TEXT NOT NULL,
+                    PRIMARY KEY(user_id, door)
+                )
+                """
+            )
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS winner_entries (
+                    user_id TEXT NOT NULL,
+                    display_name TEXT NOT NULL,
+                    door INTEGER NOT NULL,
+                    prize_name TEXT NOT NULL,
+                    sponsor TEXT,
+                    year INTEGER NOT NULL,
+                    created_at TEXT NOT NULL,
+                    PRIMARY KEY(user_id, door)
+                )
+                """
+            )
+
             if os.path.abspath(USER_DATABASE) == default_user_db:
                 import_rewards_from_winners_file(connection)
             elif DEBUG:
@@ -992,32 +1067,35 @@ def cleanup_user_qr_codes(rewards):
 
 
 def remove_user_from_winners_file(user_id):
-    winners_file = WINNERS_FILE
-    winners_file_path = os.path.abspath(winners_file)
-    if not os.path.exists(winners_file_path):
-        return False
+    user_id_str = str(user_id)
+    entfernt = False
 
     try:
-        with open(winners_file_path, "r", encoding="utf-8") as file:
-            lines = file.readlines()
-    except OSError as exc:
-        logging.error("Gewinnerdatei konnte nicht gelesen werden: %s", exc)
-        return False
+        with get_db_connection() as connection:
+            cursor = connection.execute(
+                "DELETE FROM winner_entries WHERE user_id = ?",
+                (user_id_str,),
+            )
+            entfernt = (cursor.rowcount or 0) > 0
+    except sqlite3.DatabaseError as exc:
+        logging.error("Gewinnereinträge in der Datenbank konnten nicht gelöscht werden: %s", exc)
 
-    prefix = f"{user_id}:"
-    filtered_lines = [line for line in lines if not line.strip().startswith(prefix)]
+    winners_file_path = os.path.abspath(WINNERS_FILE)
+    if os.path.exists(winners_file_path):
+        try:
+            def entferne_legacy_zeilen(zeilen):
+                prefix = f"{user_id_str}:"
+                gefiltert = [zeile for zeile in zeilen if not zeile.strip().startswith(prefix)]
+                if len(gefiltert) != len(zeilen):
+                    nonlocal entfernt
+                    entfernt = True
+                return gefiltert
 
-    if len(filtered_lines) == len(lines):
-        return False
+            aktualisiere_datei_mit_exclusive_lock(winners_file_path, entferne_legacy_zeilen)
+        except OSError as exc:
+            logging.error("Legacy-Gewinnerdatei konnte nicht aktualisiert werden: %s", exc)
 
-    try:
-        with open(winners_file_path, "w", encoding="utf-8") as file:
-            file.writelines(filtered_lines)
-    except OSError as exc:
-        logging.error("Gewinnerdatei konnte nicht aktualisiert werden: %s", exc)
-        return False
-
-    return True
+    return entfernt
 
 
 def delete_user_and_release_rewards(user_id):
@@ -1544,6 +1622,16 @@ def hat_gewonnen(user_identifier):
             )
             if cursor.fetchone():
                 return True
+            try:
+                cursor = connection.execute(
+                    "SELECT 1 FROM winner_entries WHERE user_id = ? LIMIT 1",
+                    (user_identifier,),
+                )
+                if cursor.fetchone():
+                    return True
+            except sqlite3.DatabaseError:
+                if DEBUG:
+                    logging.debug("winner_entries-Tabelle ist nicht verfügbar, nutze Legacy-Fallback.")
 
             user_lookup = build_user_lookup(connection)
             winner_mappings = load_winner_user_mapping(WINNER_USER_MAPPING_FILE)
@@ -1554,45 +1642,50 @@ def hat_gewonnen(user_identifier):
     if not os.path.exists(winners_file_path):
         return False
 
-    with open(winners_file_path, "r", encoding="utf-8") as file:
-        for line in file:
-            line = line.strip()
-            if not line:
-                continue
+    try:
+        lines = lese_datei_mit_shared_lock(winners_file_path)
+    except OSError as exc:
+        logging.error("Legacy-Gewinnerdatei konnte nicht gelesen werden: %s", exc)
+        return False
 
-            prefix = line.split(" ", 1)[0]
-            prefix_id = prefix.split(":", 1)[0]
-            if prefix_id == user_identifier:
-                return True
+    for line in lines:
+        line = line.strip()
+        if not line:
+            continue
 
-            if user_identifier_int is None:
-                continue
+        prefix = line.split(" ", 1)[0]
+        prefix_id = prefix.split(":", 1)[0]
+        if prefix_id == user_identifier:
+            return True
 
-            parsed_entry = parse_winner_entry(line)
-            mapped_user_id = None
+        if user_identifier_int is None:
+            continue
 
-            if parsed_entry:
+        parsed_entry = parse_winner_entry(line)
+        mapped_user_id = None
+
+        if parsed_entry:
+            mapped_user_id = resolve_user_id_from_identity(
+                user_lookup,
+                winner_mappings,
+                winner_id=parsed_entry.get("user_id"),
+                email=parsed_entry.get("email"),
+                display_name=parsed_entry.get("display_name"),
+            )
+        else:
+            try:
+                legacy_winner_id = int(prefix_id)
+            except ValueError:
+                legacy_winner_id = None
+            if legacy_winner_id is not None:
                 mapped_user_id = resolve_user_id_from_identity(
                     user_lookup,
                     winner_mappings,
-                    winner_id=parsed_entry.get("user_id"),
-                    email=parsed_entry.get("email"),
-                    display_name=parsed_entry.get("display_name"),
+                    winner_id=legacy_winner_id,
                 )
-            else:
-                try:
-                    legacy_winner_id = int(prefix_id)
-                except ValueError:
-                    legacy_winner_id = None
-                if legacy_winner_id is not None:
-                    mapped_user_id = resolve_user_id_from_identity(
-                        user_lookup,
-                        winner_mappings,
-                        winner_id=legacy_winner_id,
-                    )
 
-            if mapped_user_id == user_identifier_int:
-                return True
+        if mapped_user_id == user_identifier_int:
+            return True
 
     return False
 
@@ -1619,25 +1712,49 @@ def gewinnchance_ermitteln(user_identifier, heutiges_datum, verbleibende_preise)
 
 def hat_teilgenommen(user_identifier, tag):
     user_identifier = str(user_identifier)
-    if not os.path.exists("teilnehmer.txt"):
+    try:
+        tag_int = int(tag)
+    except (TypeError, ValueError):
         return False
-    with open("teilnehmer.txt", "r", encoding="utf-8") as file:
-        for line in file:
-            cleaned = line.strip()
-            if not cleaned:
-                continue
-            try:
-                user_part, tag_part = cleaned.rsplit("-", 1)
-            except ValueError:
-                continue
-            user_key = user_part.split(":", 1)[0]
-            if user_key == user_identifier and tag_part == str(tag):
+    try:
+        with get_db_connection() as connection:
+            cursor = connection.execute(
+                "SELECT 1 FROM participant_entries WHERE user_id = ? AND door = ? LIMIT 1",
+                (user_identifier, tag_int),
+            )
+            if cursor.fetchone():
                 return True
+    except sqlite3.DatabaseError as exc:
+        logging.error("Teilnahmestatus konnte nicht aus der Datenbank gelesen werden: %s", exc)
+
+    if not os.path.exists(PARTICIPANTS_FILE):
+        return False
+
+    try:
+        lines = lese_datei_mit_shared_lock(PARTICIPANTS_FILE)
+    except OSError as exc:
+        logging.error("Legacy-Teilnehmerdatei konnte nicht gelesen werden: %s", exc)
+        return False
+
+    for line in lines:
+        cleaned = line.strip()
+        if not cleaned:
+            continue
+        try:
+            user_part, tag_part = cleaned.rsplit("-", 1)
+        except ValueError:
+            continue
+        user_key = user_part.split(":", 1)[0]
+        if user_key == user_identifier and tag_part == str(tag):
+            return True
     return False
 
 
 def speichere_teilnehmer(user_identifier, display_name, tag):
     user_identifier = str(user_identifier)
+    display_name = str(display_name or "").strip() or "Unbekannt"
+    tag_int = int(tag)
+    created_at = get_local_datetime().isoformat()
     if DEBUG:
         logging.debug(
             "Speichere Teilnehmer %s (%s) für Tag %s",
@@ -1645,11 +1762,30 @@ def speichere_teilnehmer(user_identifier, display_name, tag):
             display_name,
             tag,
         )
-    with open("teilnehmer.txt", "a", encoding="utf-8") as file:
-        file.write(f"{user_identifier}:{display_name}-{tag}\n")
+    try:
+        with get_db_connection() as connection:
+            connection.execute(
+                """
+                INSERT INTO participant_entries (user_id, display_name, door, created_at)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT(user_id, door) DO UPDATE SET
+                    display_name=excluded.display_name,
+                    created_at=excluded.created_at
+                """,
+                (user_identifier, display_name, tag_int, created_at),
+            )
+    except sqlite3.DatabaseError as exc:
+        logging.error("Teilnehmer konnte nicht gespeichert werden: %s", exc)
+        raise
 
 
 def speichere_gewinner(user_identifier, display_name, tag, preis, jahr=None, sponsor=None):
+    user_identifier = str(user_identifier)
+    display_name = str(display_name or "").strip() or "Unbekannt"
+    tag_int = int(tag)
+    preis_text = str(preis or "").strip()
+    sponsor_text = str(sponsor or "").strip() or None
+    created_at = get_local_datetime().isoformat()
     if DEBUG:
         logging.debug(
             "Speichere Gewinner %s (%s) für Tag %s (%s)",
@@ -1660,13 +1796,24 @@ def speichere_gewinner(user_identifier, display_name, tag, preis, jahr=None, spo
         )
     if jahr is None:
         jahr = get_local_datetime().year
-    sponsor_text = ""
-    if sponsor:
-        sponsor_text = f" - Sponsor: {str(sponsor).strip()}"
-    with open(WINNERS_FILE, "a", encoding="utf-8") as file:
-        file.write(
-            f"{user_identifier}:{display_name} - Tag {tag} - {preis}{sponsor_text} - OV L11 - {jahr}\n"
-        )
+    try:
+        with get_db_connection() as connection:
+            connection.execute(
+                """
+                INSERT INTO winner_entries (user_id, display_name, door, prize_name, sponsor, year, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(user_id, door) DO UPDATE SET
+                    display_name=excluded.display_name,
+                    prize_name=excluded.prize_name,
+                    sponsor=excluded.sponsor,
+                    year=excluded.year,
+                    created_at=excluded.created_at
+                """,
+                (user_identifier, display_name, tag_int, preis_text, sponsor_text, int(jahr), created_at),
+            )
+    except sqlite3.DatabaseError as exc:
+        logging.error("Gewinner konnte nicht gespeichert werden: %s", exc)
+        raise
 
 
 def process_win_for_user(user_id, display_name, tag, heute, prizes):
