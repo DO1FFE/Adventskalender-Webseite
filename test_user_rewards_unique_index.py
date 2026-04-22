@@ -66,7 +66,8 @@ def test_oeffne_tuerchen_migrates_user_rewards_index(tmp_path, monkeypatch):
     monkeypatch.setattr(advent, "verbleibende_tage_bis_letztes_tuerchen", lambda _date: 1)
     monkeypatch.setattr(advent, "increment_daily_awarded_prizes", lambda *_, **__: None)
     monkeypatch.setattr(advent, "gewinnchance_ermitteln", lambda *_, **__: 1.0)
-    monkeypatch.setattr(advent, "reduce_prize", lambda prizes, _day: prizes[0])
+    monkeypatch.setattr(advent, "waehle_preis_ohne_persistenz", lambda prizes, _day: (0, prizes[0]))
+    monkeypatch.setattr(advent, "persistiere_preisreduzierung", lambda *_, **__: True)
     monkeypatch.setattr(advent.random, "random", lambda: 0.0)
 
     advent.tuerchen_status.clear()
@@ -151,7 +152,8 @@ def test_oeffne_tuerchen_without_unique_constraint_falls_back(tmp_path, monkeypa
     monkeypatch.setattr(advent, "verbleibende_tage_bis_letztes_tuerchen", lambda _date: 1)
     monkeypatch.setattr(advent, "increment_daily_awarded_prizes", lambda *_, **__: None)
     monkeypatch.setattr(advent, "gewinnchance_ermitteln", lambda *_, **__: 1.0)
-    monkeypatch.setattr(advent, "reduce_prize", lambda prizes, _day: prizes[0])
+    monkeypatch.setattr(advent, "waehle_preis_ohne_persistenz", lambda prizes, _day: (0, prizes[0]))
+    monkeypatch.setattr(advent, "persistiere_preisreduzierung", lambda *_, **__: True)
     monkeypatch.setattr(advent.random, "random", lambda: 0.0)
     monkeypatch.setattr(advent, "ensure_user_rewards_unique_constraint", lambda _conn: False)
 

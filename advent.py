@@ -1387,6 +1387,38 @@ def reduce_prize(prizes, current_day=None):
     return selected
 
 
+def waehle_preis_ohne_persistenz(prizes, current_day=None):
+    verfuegbare_preise = []
+    for index, preis in enumerate(prizes):
+        if preis.get("remaining", 0) <= 0:
+            continue
+        if index == 0 and current_day not in (None, 24):
+            continue
+        verfuegbare_preise.append((index, preis))
+
+    if not verfuegbare_preise:
+        return None, None
+
+    gewichte = [preis.get("remaining", 0) for _, preis in verfuegbare_preise]
+    ausgewaehlt_index, ausgewaehlter_preis = random.choices(
+        verfuegbare_preise,
+        weights=gewichte,
+        k=1,
+    )[0]
+    return ausgewaehlt_index, ausgewaehlter_preis
+
+
+def persistiere_preisreduzierung(prizes, preis_index):
+    if preis_index is None or preis_index < 0 or preis_index >= len(prizes):
+        return False
+    if prizes[preis_index].get("remaining", 0) <= 0:
+        return False
+
+    prizes[preis_index]["remaining"] -= 1
+    save_prizes(prizes)
+    return True
+
+
 def format_prize_lines(prizes):
     lines = []
     for prize in prizes:
@@ -1580,6 +1612,101 @@ def speichere_gewinner(user_identifier, display_name, tag, preis, jahr=None, spo
         file.write(
             f"{user_identifier}:{display_name} - Tag {tag} - {preis}{sponsor_text} - OV L11 - {jahr}\n"
         )
+
+
+def process_win_for_user(user_id, display_name, tag, heute, prizes):
+    error_message = (
+        "Leider ist beim Speichern deines Gewinns ein Fehler aufgetreten. "
+        "Bitte versuche es erneut oder kontaktiere uns zur Bestätigung."
+    )
+
+    preis_index, gewonnener_preis = waehle_preis_ohne_persistenz(prizes, heute.day)
+    if gewonnener_preis is None or not gewonnener_preis.get("name"):
+        hinweis = "Alle Preise wurden bereits vergeben."
+        if tag != 24 and prizes and prizes[0].get("remaining", 0) > 0:
+            hinweis = (
+                "Alle heutigen Preise wurden bereits vergeben. "
+                "Der Hauptpreis wird erst am 24. Dezember verlost."
+            )
+        return {"success": False, "status_code": 200, "message": hinweis}
+
+    aktuelles_jahr = heute.year
+    preis_name = str(gewonnener_preis.get("name", "") or "").strip()
+    sponsor_name = str(gewonnener_preis.get("sponsor", "") or "").strip()
+    sponsor_link = str(gewonnener_preis.get("sponsor_link", "") or "").strip()
+    qr_content = f"{tag}-{display_name}-{user_id}-{preis_name}-OV L11-{aktuelles_jahr}"
+    qr_filename = f"user_{user_id}_{tag}.png"
+    qr_pfad = os.path.join("qr_codes", qr_filename)
+
+    try:
+        qr = qrcode.QRCode(
+            version=1,
+            error_correction=qrcode.constants.ERROR_CORRECT_L,
+            box_size=10,
+            border=4,
+        )
+        qr.add_data(qr_content)
+        qr.make(fit=True)
+        img = qr.make_image(fill_color="black", back_color="white")
+        os.makedirs("qr_codes", exist_ok=True)
+        img.save(qr_pfad)
+    except Exception as exc:
+        logging.error("QR-Code konnte nicht erstellt werden: %s", exc)
+        return {"success": False, "status_code": 500, "message": error_message}
+
+    try:
+        reward_recorded = record_user_reward(
+            user_id,
+            tag,
+            preis_name,
+            sponsor=sponsor_name,
+            sponsor_link=sponsor_link,
+            qr_filename=qr_filename,
+            qr_content=qr_content,
+        )
+    except ValueError as exc:
+        logging.error("Ungültige Gewinninformationen: %s", exc)
+        reward_recorded = False
+    except Exception as exc:  # pragma: no cover - defensive logging path
+        logging.error("Beim Speichern des Gewinns ist ein Fehler aufgetreten: %s", exc)
+        reward_recorded = False
+
+    if not reward_recorded:
+        try:
+            if os.path.exists(qr_pfad):
+                os.remove(qr_pfad)
+        except OSError as exc:
+            logging.error("QR-Code %s konnte nicht entfernt werden: %s", qr_pfad, exc)
+        return {"success": False, "status_code": 500, "message": error_message}
+
+    if not persistiere_preisreduzierung(prizes, preis_index):
+        logging.error("Preisbestand konnte für Benutzer %s nicht aktualisiert werden.", user_id)
+        return {"success": False, "status_code": 500, "message": error_message}
+
+    try:
+        speichere_gewinner(
+            user_id,
+            display_name,
+            tag,
+            preis_name,
+            jahr=aktuelles_jahr,
+            sponsor=sponsor_name,
+        )
+        increment_daily_awarded_prizes(heute)
+    except Exception as exc:
+        logging.error("Gewinnerdaten konnten nicht vollständig gespeichert werden: %s", exc)
+        prizes[preis_index]["remaining"] += 1
+        save_prizes(prizes)
+        return {"success": False, "status_code": 500, "message": error_message}
+
+    return {
+        "success": True,
+        "status_code": 200,
+        "prize_name": preis_name,
+        "sponsor_name": sponsor_name,
+        "sponsor_link": sponsor_link,
+        "qr_filename": qr_filename,
+    }
 
 @app.route('/login', methods=['GET', 'POST'])
 @csrf.exempt
@@ -1885,70 +2012,17 @@ def oeffne_tuerchen(tag):
             and get_local_datetime().hour in gewinn_zeiten
             and random.random() < gewinnchance
         ):
-            gewonnener_preis = reduce_prize(prizes, heute.day)
-            if not gewonnener_preis or not gewonnener_preis.get("name"):
-                if DEBUG: logging.debug("Preis konnte nicht reduziert werden")
-                hinweis = "Alle Preise wurden bereits vergeben."
-                if tag != 24 and prizes and prizes[0].get("remaining", 0) > 0:
-                    hinweis = (
-                        "Alle heutigen Preise wurden bereits vergeben. "
-                        "Der Hauptpreis wird erst am 24. Dezember verlost."
-                    )
-                return make_response(render_template_string(GENERIC_PAGE, content=hinweis))
-            increment_daily_awarded_prizes(heute)
-            aktuelles_jahr = heute.year
-            preis_name = gewonnener_preis.get("name", "")
-            sponsor_name = str(gewonnener_preis.get("sponsor", "") or "").strip()
-            sponsor_link = str(gewonnener_preis.get("sponsor_link", "") or "").strip()
-            speichere_gewinner(user_id, display_name, tag, preis_name, jahr=aktuelles_jahr, sponsor=sponsor_name)
-            error_message = (
-                "Leider ist beim Speichern deines Gewinns ein Fehler aufgetreten. "
-                "Bitte versuche es erneut oder kontaktiere uns zur Bestätigung."
-            )
-
-            qr_content = f"{tag}-{display_name}-{user_id}-{preis_name}-OV L11-{aktuelles_jahr}"
-            try:
-                qr = qrcode.QRCode(
-                    version=1,
-                    error_correction=qrcode.constants.ERROR_CORRECT_L,
-                    box_size=10,
-                    border=4,
-                )
-                qr.add_data(qr_content)
-                qr.make(fit=True)
-                img = qr.make_image(fill_color="black", back_color="white")
-                qr_filename = f"user_{user_id}_{tag}.png"
-                os.makedirs('qr_codes', exist_ok=True)
-                img.save(os.path.join('qr_codes', qr_filename))  # Speicherort korrigiert
-                if DEBUG: logging.debug(f"QR-Code generiert und gespeichert: {qr_filename}")
-            except Exception as exc:
-                logging.error("QR-Code konnte nicht erstellt werden: %s", exc)
+            result = process_win_for_user(user_id, display_name, tag, heute, prizes)
+            if not result.get("success"):
                 return make_response(
-                    render_template_string(GENERIC_PAGE, content=error_message),
-                    500,
+                    render_template_string(GENERIC_PAGE, content=result.get("message", "")),
+                    result.get("status_code", 500),
                 )
-            try:
-                reward_recorded = record_user_reward(
-                    user_id,
-                    tag,
-                    preis_name,
-                    sponsor=sponsor_name,
-                    sponsor_link=sponsor_link,
-                    qr_filename=qr_filename,
-                    qr_content=qr_content,
-                )
-            except ValueError as exc:
-                logging.error("Ungültige Gewinninformationen: %s", exc)
-                reward_recorded = False
-            except Exception as exc:  # pragma: no cover - defensive logging path
-                logging.error("Beim Speichern des Gewinns ist ein Fehler aufgetreten: %s", exc)
-                reward_recorded = False
+            preis_name = result.get("prize_name", "")
+            sponsor_name = result.get("sponsor_name", "")
+            sponsor_link = result.get("sponsor_link", "")
+            qr_filename = result.get("qr_filename", "")
 
-            if not reward_recorded:
-                return make_response(
-                    render_template_string(GENERIC_PAGE, content=error_message),
-                    500,
-                )
             prize_label = escape(preis_name)
             sponsor_hint = Markup("")
             if sponsor_name:
