@@ -1,27 +1,29 @@
 # Adventskalender für OV L11
 
-Dieses Repository enthält den Code für einen digitalen Adventskalender, speziell entwickelt für den OV L11. Der Kalender ermöglicht es Benutzern, täglich ein Türchen zu öffnen und die Chance auf ein Freigetränk in der Clubstation zu haben.
+Dieses Repository enthält den Code für einen digitalen Adventskalender, speziell entwickelt für den OV L11. Der Kalender ermöglicht registrierten Benutzern, täglich ein Türchen zu öffnen und die Chance auf einen der hinterlegten Preise zu haben.
 
 ## Funktionsweise
 
 - Jeder Benutzer kann einmal pro Tag ein Türchen öffnen.
-- Jeden Tag wird zufällig entschieden, ob ein Preis (Freigetränk) vergeben wird.
+- Jeden Tag wird zufällig entschieden, ob ein Preis vergeben wird.
 - Die Gewinnchancen verteilen sich über den Tag, wobei die Vergabe der Preise nach bestimmten Uhrzeiten erfolgt.
-- Insgesamt werden im Laufe des Dezembers 10 Freigetränke vergeben.
+- Preise, Sponsoren und Restbestände werden über die Admin-Seite gepflegt.
+- Hauptpreise können explizit markiert werden und werden erst am 24. Dezember verlost.
 - Gewinner erhalten einen QR-Code, der als Berechtigungsnachweis dient.
+- Teilnahmen und Gewinne werden jahresbezogen gespeichert, damit ein neuer Adventskalender nicht durch Vorjahresdaten blockiert wird.
 
 ## Technologie
 
 - **Backend**: Flask (Python)
-- **Datenverwaltung**: Einfache Textdateien (`teilnehmer.txt`, `gewinner.txt`)
+- **Datenverwaltung**: SQLite (`users.db`) plus JSON-Dateien für Preis- und Statusdaten
 - **QR-Code-Generierung**: Python `qrcode` Bibliothek
 
 ## Setup
 
 1. Stellen Sie sicher, dass Python auf Ihrem System installiert ist.
-2. Installieren Sie Flask, `qrcode`, `pytz` und `Flask-WTF`:
+2. Installieren Sie die Abhängigkeiten:
    ```bash
-   pip install Flask Flask-WTF qrcode pytz
+   python3 -m pip install -r requirements.txt
    ```
 3. Klonen Sie das Repository und navigieren Sie in das Projektverzeichnis.
 4. Starten Sie den Server:
@@ -29,6 +31,8 @@ Dieses Repository enthält den Code für einen digitalen Adventskalender, spezie
    python advent.py
    ```
 5. Öffnen Sie einen Webbrowser und gehen Sie zu `http://localhost:8087/`.
+
+Für den Produktivbetrieb sollte `FLASK_SECRET_KEY` gesetzt und ein WSGI-Server statt des Flask-Entwicklungsservers genutzt werden. Debugging wird nur aktiviert, wenn `FLASK_DEBUG=1` gesetzt ist.
 
 > Hinweis: Die SQLite-Datenbank `users.db` wird bei Bedarf automatisch im Projektverzeichnis angelegt und ist daher nicht im Repository enthalten.
 
@@ -54,8 +58,8 @@ Dieses Repository enthält den Code für einen digitalen Adventskalender, spezie
 
 ## Konfiguration
 
-- Sie können die Uhrzeiten für die Gewinnvergabe in der Datei `advent.py` anpassen.
-- Die Farben der Türchen können ebenfalls in `advent.py` geändert werden.
+- Die Preise werden in der Admin-Seite oder in `preise.json` gepflegt.
+- Die Uhrzeiten für die Gewinnvergabe und die Farben der Türchen können in `advent.py` angepasst werden.
 
 ## Sicherheitshinweise
 

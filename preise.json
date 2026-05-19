@@ -1,0 +1,58 @@
+[
+  {
+    "name": "DIAMOND Antennenfuß TRS-3 mit Stativgewinde exklusiv in Gold",
+    "total": 1,
+    "remaining": 0,
+    "sponsor": "WiMo",
+    "sponsor_link": "https://www.wimo.com/de/diamond-trs3-antenna-base-for-tripods",
+    "hauptpreis": true
+  },
+  {
+    "name": "Dualband Magnetfußantenne 2m/70cm BNC",
+    "total": 1,
+    "remaining": 0,
+    "sponsor": "WiMo",
+    "sponsor_link": "https://www.wimo.com/de/wimo-mr77-magnetbase",
+    "hauptpreis": false
+  },
+  {
+    "name": "Personalisierte Stofftasche",
+    "total": 1,
+    "remaining": 0,
+    "sponsor": "Daniela Ribnikar",
+    "sponsor_link": "",
+    "hauptpreis": false
+  },
+  {
+    "name": "Personalisierte DARC-Tasse",
+    "total": 2,
+    "remaining": 1,
+    "sponsor": "Daniela Ribnikar",
+    "sponsor_link": "",
+    "hauptpreis": false
+  },
+  {
+    "name": "Bausatz Retroradio von FRANZIS",
+    "total": 1,
+    "remaining": 0,
+    "sponsor": "Michael Jung, DO7GJ",
+    "sponsor_link": "",
+    "hauptpreis": false
+  },
+  {
+    "name": "AMNVOLT Mini Radio (150kHz-30MHz + 64-108MHz)",
+    "total": 1,
+    "remaining": 1,
+    "sponsor": "Franc Fetz, DC9PI",
+    "sponsor_link": "",
+    "hauptpreis": false
+  },
+  {
+    "name": "Freigetränk",
+    "total": 10,
+    "remaining": 0,
+    "sponsor": "DARC e.V. OV L11",
+    "sponsor_link": "",
+    "hauptpreis": false
+  }
+]

@@ -3,6 +3,47 @@ import sqlite3
 import advent
 
 
+def test_user_rewards_migration_repariert_fremdschluessel_auf_users(tmp_path, monkeypatch):
+    database_path = tmp_path / "users.db"
+    monkeypatch.setattr(advent, "USER_DATABASE", str(database_path))
+
+    with sqlite3.connect(database_path) as connection:
+        connection.row_factory = sqlite3.Row
+        connection.execute(
+            """
+            CREATE TABLE users (
+                id INTEGER PRIMARY KEY,
+                email TEXT UNIQUE NOT NULL CHECK (trim(email) <> ''),
+                display_name TEXT NOT NULL CHECK (trim(display_name) <> ''),
+                password_hash TEXT NOT NULL
+            )
+            """
+        )
+        connection.execute(
+            """
+            CREATE TABLE user_rewards (
+                id INTEGER PRIMARY KEY,
+                user_id INTEGER NOT NULL,
+                year INTEGER NOT NULL,
+                door INTEGER NOT NULL,
+                prize_name TEXT NOT NULL,
+                sponsor TEXT,
+                sponsor_link TEXT,
+                qr_filename TEXT,
+                qr_content TEXT,
+                created_at TEXT NOT NULL,
+                UNIQUE(user_id, year, door),
+                FOREIGN KEY(user_id) REFERENCES users_legacy(id) ON DELETE CASCADE
+            )
+            """
+        )
+
+        assert advent.ensure_user_rewards_unique_constraint(connection) is True
+        foreign_keys = connection.execute("PRAGMA foreign_key_list('user_rewards')").fetchall()
+
+    assert foreign_keys[0]["table"] == "users"
+
+
 def test_user_rewards_migration_and_recording(tmp_path, monkeypatch):
     database_path = tmp_path / "users.db"
     monkeypatch.setattr(advent, "USER_DATABASE", str(database_path))
@@ -59,4 +100,3 @@ def test_user_rewards_migration_and_recording(tmp_path, monkeypatch):
     assert latest_reward["prize_name"] == "Neuer Preis"
     assert latest_reward["sponsor"] == "Sponsor"
     assert latest_reward["sponsor_link"] == "https://example.com"
-

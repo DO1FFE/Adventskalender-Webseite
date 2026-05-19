@@ -38,13 +38,13 @@ def test_hat_gewonnen_findet_direkten_datenbankgewinn(tmp_path, monkeypatch):
         connection.execute(
             """
             INSERT INTO user_rewards (
-                user_id, door, prize_name, sponsor, sponsor_link, qr_filename, qr_content, created_at
-            ) VALUES (?, ?, ?, NULL, NULL, NULL, NULL, datetime('now'))
+                user_id, year, door, prize_name, sponsor, sponsor_link, qr_filename, qr_content, created_at
+            ) VALUES (?, ?, ?, ?, NULL, NULL, NULL, NULL, datetime('now'))
             """,
-            (7, 3, "Preis"),
+            (7, 2025, 3, "Preis"),
         )
 
-    assert advent.hat_gewonnen(7) is True
+    assert advent.hat_gewonnen(7, 2025) is True
 
 
 def test_hat_gewonnen_fallback_mit_mapping_auf_echte_user_id(tmp_path, monkeypatch):
@@ -73,4 +73,4 @@ def test_hat_gewonnen_fallback_mit_mapping_auf_echte_user_id(tmp_path, monkeypat
             (1, "real@example.com", "Real User", ""),
         )
 
-    assert advent.hat_gewonnen(1) is True
+    assert advent.hat_gewonnen(1, 2025) is True

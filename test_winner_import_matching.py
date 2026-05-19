@@ -21,7 +21,7 @@ def test_import_prefers_existing_user_by_display_name(tmp_path, monkeypatch):
     database_path = tmp_path / "users.db"
     winners_file = tmp_path / "gewinner.txt"
 
-    winners_file.write_text("99: Test User - Tag 1 - Preis\n", encoding="utf-8")
+    winners_file.write_text("99: Test User - Tag 1 - Preis - OV L11 - 2025\n", encoding="utf-8")
 
     monkeypatch.setattr(advent, "USER_DATABASE", str(database_path))
     monkeypatch.setattr(advent, "WINNERS_FILE", str(winners_file))
@@ -36,11 +36,11 @@ def test_import_prefers_existing_user_by_display_name(tmp_path, monkeypatch):
 
         imported = advent.import_rewards_from_winners_file(connection, str(winners_file))
 
-        cursor = connection.execute("SELECT user_id, door FROM user_rewards")
+        cursor = connection.execute("SELECT user_id, year, door FROM user_rewards")
         stored_entries = [tuple(row) for row in cursor.fetchall()]
 
     assert imported == 1
-    assert stored_entries == [(2, 1)]
+    assert stored_entries == [(2, 2025, 1)]
 
 
 def test_placeholder_rewards_migration(tmp_path):
@@ -66,10 +66,10 @@ def test_placeholder_rewards_migration(tmp_path):
         connection.execute(
             """
             INSERT INTO user_rewards (
-                user_id, door, prize_name, sponsor, sponsor_link, qr_filename, qr_content, created_at
-            ) VALUES (?, ?, ?, NULL, NULL, NULL, NULL, datetime('now'))
+                user_id, year, door, prize_name, sponsor, sponsor_link, qr_filename, qr_content, created_at
+            ) VALUES (?, ?, ?, ?, NULL, NULL, NULL, NULL, datetime('now'))
             """,
-            (99, 1, "Preis"),
+            (99, 2025, 1, "Preis"),
         )
 
         migrated, removed = advent.migrate_placeholder_user_rewards(connection, str(mapping_file))

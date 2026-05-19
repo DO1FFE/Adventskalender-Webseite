@@ -15,6 +15,7 @@ import sqlite3
 import sys
 import tempfile
 import fcntl
+from contextlib import contextmanager
 from urllib.parse import urlparse
 from flask import (
     Flask,
@@ -37,14 +38,14 @@ logging.basicConfig(filename='debug.log', level=logging.DEBUG,
                     format='%(asctime)s %(levelname)s: %(message)s',
                     datefmt='%Y-%m-%d %H:%M:%S')
 
-# Debugging-Flag
-DEBUG = True
+# Debugging-Flag nur explizit über die Umgebung aktivieren.
+DEBUG = os.environ.get("FLASK_DEBUG", "").strip().lower() in {"1", "true", "ja", "yes", "on"}
 
 # Lokale Zeitzone festlegen
 local_timezone = pytz.timezone("Europe/Berlin")
 
 app = Flask(__name__)
-app.secret_key = os.environ.get("FLASK_SECRET_KEY", "please-change-me")
+app.secret_key = os.environ.get("FLASK_SECRET_KEY") or os.urandom(32)
 csrf = CSRFProtect()
 csrf.init_app(app)
 
@@ -53,11 +54,19 @@ USER_DATABASE = os.path.join(BASE_DIR, "users.db")
 WINNERS_FILE = os.path.join(BASE_DIR, "gewinner.txt")
 PARTICIPANTS_FILE = os.path.join(BASE_DIR, "teilnehmer.txt")
 WINNER_USER_MAPPING_FILE = os.path.join(BASE_DIR, "gewinner_user_mapping.json")
+PRIZE_FILE = os.path.join(BASE_DIR, "preise.json")
+CALENDAR_STATUS_FILE = os.path.join(BASE_DIR, "kalender_status.json")
+DAILY_PRIZE_FILE = os.path.join(BASE_DIR, "tagespreise.json")
+QR_CODE_DIR = os.path.join(BASE_DIR, "qr_codes")
+EVENT_GRAPH_DIR = os.path.join(BASE_DIR, "event_graphen")
+APP_LOCK_FILE = os.path.join(BASE_DIR, "advent.lock")
 ADMIN_EMAIL = "do1ffe@darc.de"
+ERSTELLUNGSJAHR = 2023
 USER_REWARDS_TABLE_SQL = """
     CREATE TABLE IF NOT EXISTS user_rewards (
         id INTEGER PRIMARY KEY,
         user_id INTEGER NOT NULL,
+        year INTEGER NOT NULL,
         door INTEGER NOT NULL,
         prize_name TEXT NOT NULL,
         sponsor TEXT,
@@ -65,8 +74,30 @@ USER_REWARDS_TABLE_SQL = """
         qr_filename TEXT,
         qr_content TEXT,
         created_at TEXT NOT NULL,
-        UNIQUE(user_id, door),
+        UNIQUE(user_id, year, door),
         FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+    )
+    """
+PARTICIPANT_ENTRIES_TABLE_SQL = """
+    CREATE TABLE IF NOT EXISTS participant_entries (
+        user_id TEXT NOT NULL,
+        display_name TEXT NOT NULL,
+        year INTEGER NOT NULL,
+        door INTEGER NOT NULL,
+        created_at TEXT NOT NULL,
+        PRIMARY KEY(user_id, year, door)
+    )
+    """
+WINNER_ENTRIES_TABLE_SQL = """
+    CREATE TABLE IF NOT EXISTS winner_entries (
+        user_id TEXT NOT NULL,
+        display_name TEXT NOT NULL,
+        year INTEGER NOT NULL,
+        door INTEGER NOT NULL,
+        prize_name TEXT NOT NULL,
+        sponsor TEXT,
+        created_at TEXT NOT NULL,
+        PRIMARY KEY(user_id, year, door)
     )
     """
 
@@ -78,7 +109,10 @@ CSRF_ERROR_MESSAGE = (
 
 @app.context_processor
 def inject_csrf_token():
-    return {"csrf_token": generate_csrf}
+    return {
+        "csrf_token": generate_csrf,
+        "copyright_text": erzeuge_copyright_text,
+    }
 
 
 def get_db_connection():
@@ -137,6 +171,16 @@ def aktualisiere_datei_mit_exclusive_lock(dateipfad, updater_funktion):
             fcntl.flock(lock_datei.fileno(), fcntl.LOCK_UN)
 
 
+@contextmanager
+def exklusiver_app_lock():
+    with open(APP_LOCK_FILE, "a", encoding="utf-8") as lock_datei:
+        fcntl.flock(lock_datei.fileno(), fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(lock_datei.fileno(), fcntl.LOCK_UN)
+
+
 def normalise_email(email):
     if email is None:
         return ""
@@ -164,6 +208,45 @@ def generate_placeholder_email(existing_emails, user_id):
 
     existing_emails.add(candidate)
     return candidate
+
+
+def jahr_aus_iso_datum(wert, fallback_jahr=None):
+    if isinstance(wert, datetime.date) and not isinstance(wert, datetime.datetime):
+        return wert.year
+    if isinstance(wert, datetime.datetime):
+        return wert.year
+    if wert is not None:
+        text = str(wert).strip()
+        if text:
+            try:
+                return datetime.datetime.fromisoformat(text).year
+            except ValueError:
+                try:
+                    return int(text[:4])
+                except (TypeError, ValueError):
+                    pass
+    if fallback_jahr is not None:
+        return int(fallback_jahr)
+    return datetime.datetime.now().year
+
+
+def pruefe_fremdschluessel_auf_users(connection, tabellenname):
+    try:
+        fremdschluessel = connection.execute(
+            f"PRAGMA foreign_key_list('{tabellenname}')"
+        ).fetchall()
+    except sqlite3.DatabaseError as exc:
+        logging.error("Fremdschlüssel der Tabelle %s konnten nicht geprüft werden: %s", tabellenname, exc)
+        return False
+
+    for eintrag in fremdschluessel:
+        if (
+            eintrag["table"] == "users"
+            and eintrag["from"] == "user_id"
+            and eintrag["to"] == "id"
+        ):
+            return True
+    return False
 
 
 def sanitize_user_records(connection):
@@ -259,6 +342,7 @@ def migrate_users_table(connection):
     sanitize_user_records(connection)
 
     try:
+        connection.commit()
         connection.execute("PRAGMA foreign_keys = OFF")
         connection.execute("ALTER TABLE users RENAME TO users_legacy")
         connection.execute(
@@ -279,6 +363,7 @@ def migrate_users_table(connection):
             """
         )
         connection.execute("DROP TABLE users_legacy")
+        connection.commit()
     except sqlite3.DatabaseError as exc:
         logging.error("Benutzertabelle konnte nicht migriert werden: %s", exc)
         raise
@@ -299,6 +384,7 @@ def user_rewards_table_needs_migration(connection, columns=None):
     column_map = {column["name"]: column for column in columns}
     required_columns = {
         "user_id": 1,
+        "year": 1,
         "door": 1,
         "prize_name": 1,
         "sponsor": 0,
@@ -314,6 +400,11 @@ def user_rewards_table_needs_migration(connection, columns=None):
             return True
         if not_null and column["notnull"] != not_null:
             return True
+
+    if not pruefe_fremdschluessel_auf_users(connection, "user_rewards"):
+        if DEBUG:
+            logging.debug("Gewinntabelle benötigt Migration: Fremdschlüssel verweist nicht korrekt auf users.")
+        return True
 
     try:
         indexes = connection.execute("PRAGMA index_list('user_rewards')").fetchall()
@@ -334,7 +425,7 @@ def user_rewards_table_needs_migration(connection, columns=None):
             continue
 
         index_columns = [entry["name"] for entry in index_info]
-        if len(index_columns) == 2 and set(index_columns) == {"user_id", "door"}:
+        if index_columns == ["user_id", "year", "door"]:
             return False
 
     if DEBUG:
@@ -350,6 +441,7 @@ def migrate_user_rewards_table(connection, existing_columns=None):
         raise
 
     try:
+        connection.commit()
         connection.execute("PRAGMA foreign_keys = OFF")
         connection.execute("ALTER TABLE user_rewards RENAME TO user_rewards_legacy")
         connection.execute(
@@ -357,6 +449,7 @@ def migrate_user_rewards_table(connection, existing_columns=None):
             CREATE TABLE user_rewards (
                 id INTEGER PRIMARY KEY,
                 user_id INTEGER NOT NULL,
+                year INTEGER NOT NULL,
                 door INTEGER NOT NULL,
                 prize_name TEXT NOT NULL,
                 sponsor TEXT,
@@ -364,7 +457,7 @@ def migrate_user_rewards_table(connection, existing_columns=None):
                 qr_filename TEXT,
                 qr_content TEXT,
                 created_at TEXT NOT NULL,
-                UNIQUE(user_id, door),
+                UNIQUE(user_id, year, door),
                 FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
             )
             """
@@ -372,6 +465,7 @@ def migrate_user_rewards_table(connection, existing_columns=None):
 
         available_columns = {column["name"] for column in columns}
         fallback_created_at = get_local_datetime().isoformat()
+        fallback_year = get_local_datetime().year
 
         try:
             cursor = connection.execute("SELECT * FROM user_rewards_legacy")
@@ -383,13 +477,14 @@ def migrate_user_rewards_table(connection, existing_columns=None):
             row_data = dict(row)
             connection.execute(
                 """
-                INSERT INTO user_rewards (
-                    id, user_id, door, prize_name, sponsor, sponsor_link, qr_filename, qr_content, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT OR IGNORE INTO user_rewards (
+                    id, user_id, year, door, prize_name, sponsor, sponsor_link, qr_filename, qr_content, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     row_data.get("id"),
                     row_data.get("user_id"),
+                    row_data.get("year") if "year" in available_columns else jahr_aus_iso_datum(row_data.get("created_at"), fallback_year),
                     row_data.get("door"),
                     row_data.get("prize_name"),
                     row_data.get("sponsor") if "sponsor" in available_columns else None,
@@ -401,6 +496,7 @@ def migrate_user_rewards_table(connection, existing_columns=None):
             )
 
         connection.execute("DROP TABLE user_rewards_legacy")
+        connection.commit()
     except sqlite3.DatabaseError as exc:
         logging.error("Gewinntabelle konnte nicht migriert werden: %s", exc)
         raise
@@ -428,7 +524,7 @@ def has_user_rewards_unique_constraint(connection, indexes=None):
             continue
 
         index_columns = [entry["name"] for entry in index_info]
-        if len(index_columns) == 2 and set(index_columns) == {"user_id", "door"}:
+        if index_columns == ["user_id", "year", "door"]:
             return True
 
     return False
@@ -463,6 +559,138 @@ def ensure_user_rewards_unique_constraint(connection):
         return False
 
     return has_user_rewards_unique_constraint(connection, indexes)
+
+
+def lade_tabellenspalten(connection, tabellenname):
+    try:
+        return connection.execute(f"PRAGMA table_info('{tabellenname}')").fetchall()
+    except sqlite3.DatabaseError as exc:
+        logging.error("Tabelleninformationen für %s konnten nicht geladen werden: %s", tabellenname, exc)
+        return []
+
+
+def migrate_participant_entries_table(connection, existing_columns=None):
+    columns = existing_columns or lade_tabellenspalten(connection, "participant_entries")
+    available_columns = {column["name"] for column in columns}
+    fallback_created_at = get_local_datetime().isoformat()
+    fallback_year = get_local_datetime().year
+
+    try:
+        connection.commit()
+        connection.execute("PRAGMA foreign_keys = OFF")
+        connection.execute("ALTER TABLE participant_entries RENAME TO participant_entries_legacy")
+        connection.execute(PARTICIPANT_ENTRIES_TABLE_SQL)
+
+        try:
+            legacy_rows = connection.execute("SELECT * FROM participant_entries_legacy").fetchall()
+        except sqlite3.DatabaseError:
+            legacy_rows = []
+
+        for row in legacy_rows:
+            row_data = dict(row)
+            created_at = row_data.get("created_at") or fallback_created_at
+            year = row_data.get("year") if "year" in available_columns else jahr_aus_iso_datum(created_at, fallback_year)
+            connection.execute(
+                """
+                INSERT OR IGNORE INTO participant_entries (
+                    user_id, display_name, year, door, created_at
+                ) VALUES (?, ?, ?, ?, ?)
+                """,
+                (
+                    str(row_data.get("user_id") or ""),
+                    str(row_data.get("display_name") or "Unbekannt"),
+                    int(year),
+                    int(row_data.get("door")),
+                    created_at,
+                ),
+            )
+
+        connection.execute("DROP TABLE participant_entries_legacy")
+        connection.commit()
+    except sqlite3.DatabaseError as exc:
+        logging.error("Teilnehmertabelle konnte nicht migriert werden: %s", exc)
+        raise
+    finally:
+        connection.execute("PRAGMA foreign_keys = ON")
+
+
+def migrate_winner_entries_table(connection, existing_columns=None):
+    columns = existing_columns or lade_tabellenspalten(connection, "winner_entries")
+    available_columns = {column["name"] for column in columns}
+    fallback_created_at = get_local_datetime().isoformat()
+    fallback_year = get_local_datetime().year
+
+    try:
+        connection.commit()
+        connection.execute("PRAGMA foreign_keys = OFF")
+        connection.execute("ALTER TABLE winner_entries RENAME TO winner_entries_legacy")
+        connection.execute(WINNER_ENTRIES_TABLE_SQL)
+
+        try:
+            legacy_rows = connection.execute("SELECT * FROM winner_entries_legacy").fetchall()
+        except sqlite3.DatabaseError:
+            legacy_rows = []
+
+        for row in legacy_rows:
+            row_data = dict(row)
+            created_at = row_data.get("created_at") or fallback_created_at
+            year = row_data.get("year") if "year" in available_columns else jahr_aus_iso_datum(created_at, fallback_year)
+            connection.execute(
+                """
+                INSERT OR IGNORE INTO winner_entries (
+                    user_id, display_name, year, door, prize_name, sponsor, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    str(row_data.get("user_id") or ""),
+                    str(row_data.get("display_name") or "Unbekannt"),
+                    int(year),
+                    int(row_data.get("door")),
+                    str(row_data.get("prize_name") or ""),
+                    row_data.get("sponsor") if "sponsor" in available_columns else None,
+                    created_at,
+                ),
+            )
+
+        connection.execute("DROP TABLE winner_entries_legacy")
+        connection.commit()
+    except sqlite3.DatabaseError as exc:
+        logging.error("Gewinner-Tabelle konnte nicht migriert werden: %s", exc)
+        raise
+    finally:
+        connection.execute("PRAGMA foreign_keys = ON")
+
+
+def ensure_participant_entries_table(connection):
+    columns = lade_tabellenspalten(connection, "participant_entries")
+    if not columns:
+        connection.execute(PARTICIPANT_ENTRIES_TABLE_SQL)
+        return
+
+    column_names = [column["name"] for column in columns]
+    primary_key_columns = [
+        column["name"]
+        for column in sorted(columns, key=lambda item: item["pk"])
+        if column["pk"]
+    ]
+    if "year" not in column_names or primary_key_columns != ["user_id", "year", "door"]:
+        migrate_participant_entries_table(connection, columns)
+
+
+def ensure_winner_entries_table(connection):
+    columns = lade_tabellenspalten(connection, "winner_entries")
+    if not columns:
+        connection.execute(WINNER_ENTRIES_TABLE_SQL)
+        return
+
+    column_names = [column["name"] for column in columns]
+    primary_key_columns = [
+        column["name"]
+        for column in sorted(columns, key=lambda item: item["pk"])
+        if column["pk"]
+    ]
+    if "year" not in column_names or primary_key_columns != ["user_id", "year", "door"]:
+        migrate_winner_entries_table(connection, columns)
 
 
 def parse_winner_entry(line):
@@ -538,6 +766,117 @@ def parse_winner_entry(line):
         "sponsor": sponsor,
         "year": year,
     }
+
+
+def ermittle_legacy_datenjahr(winners_file=WINNERS_FILE):
+    years = []
+    winners_file_path = os.path.abspath(winners_file)
+    if os.path.exists(winners_file_path):
+        try:
+            lines = lese_datei_mit_shared_lock(winners_file_path)
+        except OSError as exc:
+            logging.error("Legacy-Datenjahr konnte nicht aus Gewinnerdatei gelesen werden: %s", exc)
+            lines = []
+        for line in lines:
+            parsed = parse_winner_entry(line)
+            if parsed and parsed.get("year"):
+                years.append(int(parsed["year"]))
+    if years:
+        return max(years)
+    return get_local_datetime().year
+
+
+def parse_participant_entry(line, fallback_year=None):
+    cleaned = (line or "").strip()
+    if not cleaned:
+        return None
+
+    try:
+        user_part, door_part = cleaned.rsplit("-", 1)
+    except ValueError:
+        return None
+
+    if ":" in user_part:
+        user_id, display_name = user_part.split(":", 1)
+    else:
+        user_id, display_name = user_part, "Unbekannt"
+
+    year = fallback_year or get_local_datetime().year
+    if "/" in door_part:
+        door_part, year_part = door_part.split("/", 1)
+        try:
+            year = int(year_part.strip())
+        except ValueError:
+            return None
+
+    try:
+        door = int(door_part.strip())
+    except ValueError:
+        return None
+
+    return {
+        "user_id": user_id.strip(),
+        "display_name": display_name.strip() or "Unbekannt",
+        "year": int(year),
+        "door": door,
+    }
+
+
+def import_participants_from_file(connection=None, participants_file=PARTICIPANTS_FILE):
+    participants_file_path = os.path.abspath(participants_file)
+    if not os.path.exists(participants_file_path):
+        logging.info("0 Teilnehmer aus teilnehmer.txt übernommen (Datei nicht gefunden).")
+        return 0
+
+    close_connection = False
+    if connection is None:
+        connection = get_db_connection()
+        close_connection = True
+
+    try:
+        lines = lese_datei_mit_shared_lock(participants_file_path)
+    except OSError as exc:
+        logging.error("Teilnehmerdatei konnte nicht gelesen werden: %s", exc)
+        if close_connection:
+            connection.close()
+        return 0
+
+    fallback_year = ermittle_legacy_datenjahr()
+    imported = 0
+    for line in lines:
+        parsed = parse_participant_entry(line, fallback_year=fallback_year)
+        if not parsed:
+            continue
+        try:
+            cursor = connection.execute(
+                """
+                INSERT OR IGNORE INTO participant_entries (
+                    user_id, display_name, year, door, created_at
+                ) VALUES (?, ?, ?, ?, ?)
+                """,
+                (
+                    parsed["user_id"],
+                    parsed["display_name"],
+                    parsed["year"],
+                    parsed["door"],
+                    get_local_datetime().isoformat(),
+                ),
+            )
+            if cursor.rowcount:
+                imported += 1
+        except sqlite3.DatabaseError as exc:
+            logging.error(
+                "Teilnahme für Benutzer %s und Tür %s konnte nicht importiert werden: %s",
+                parsed["user_id"],
+                parsed["door"],
+                exc,
+            )
+
+    if close_connection:
+        connection.close()
+
+    logging.info("%s Teilnehmer aus teilnehmer.txt übernommen.", imported)
+    return imported
 
 
 def load_winner_user_mapping(mapping_file=WINNER_USER_MAPPING_FILE):
@@ -681,8 +1020,12 @@ def import_rewards_from_winners_file(connection=None, winners_file=WINNERS_FILE)
         return 0
 
     try:
-        cursor = connection.execute("SELECT user_id, door FROM user_rewards")
-        existing_entries = {(int(row["user_id"]), int(row["door"])) for row in cursor.fetchall()}
+        ensure_winner_entries_table(connection)
+        cursor = connection.execute("SELECT user_id, year, door FROM user_rewards")
+        existing_entries = {
+            (int(row["user_id"]), int(row["year"]), int(row["door"]))
+            for row in cursor.fetchall()
+        }
     except sqlite3.DatabaseError as exc:
         logging.error("Bestehende Gewinne konnten nicht geladen werden: %s", exc)
         existing_entries = set()
@@ -718,34 +1061,55 @@ def import_rewards_from_winners_file(connection=None, winners_file=WINNERS_FILE)
         parsed_year = parsed.get("year")
         if parsed_year:
             try:
-                created_at = datetime.datetime(
+                created_at = local_timezone.localize(datetime.datetime(
                     parsed_year,
                     12,
                     max(min(int(door), 24), 1),
                     12,
                     0,
-                    tzinfo=local_timezone,
-                )
+                ))
             except ValueError:
                 created_at = get_local_datetime()
+        reward_year = parsed_year or created_at.year
+        legacy_qr_filename = f"user_{user_id}_{door}.png"
+        if not os.path.exists(os.path.join(QR_CODE_DIR, legacy_qr_filename)):
+            legacy_qr_filename = None
 
         try:
             connection.execute(
                 """
                 INSERT OR IGNORE INTO user_rewards (
-                    user_id, door, prize_name, sponsor, sponsor_link, qr_filename, qr_content, created_at
-                ) VALUES (?, ?, ?, ?, NULL, NULL, NULL, ?)
+                    user_id, year, door, prize_name, sponsor, sponsor_link, qr_filename, qr_content, created_at
+                ) VALUES (?, ?, ?, ?, ?, NULL, ?, NULL, ?)
                 """,
                 (
                     user_reference,
+                    reward_year,
                     door,
                     parsed.get("prize_name"),
                     parsed.get("sponsor"),
+                    legacy_qr_filename,
                     created_at.isoformat(),
                 ),
             )
-            if (user_reference, door) not in existing_entries:
-                existing_entries.add((user_reference, door))
+            connection.execute(
+                """
+                INSERT OR IGNORE INTO winner_entries (
+                    user_id, display_name, door, prize_name, sponsor, year, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    str(user_reference),
+                    parsed.get("display_name") or f"Benutzer {user_reference}",
+                    door,
+                    parsed.get("prize_name"),
+                    parsed.get("sponsor"),
+                    reward_year,
+                    created_at.isoformat(),
+                ),
+            )
+            if (user_reference, reward_year, door) not in existing_entries:
+                existing_entries.add((user_reference, reward_year, door))
                 imported += 1
         except sqlite3.DatabaseError as exc:
             logging.error(
@@ -802,11 +1166,19 @@ def migrate_placeholder_user_rewards(connection=None, mapping_file=WINNER_USER_M
             continue
 
         try:
-            cursor = connection.execute(
-                "UPDATE user_rewards SET user_id = ? WHERE user_id = ?",
-                (target_user_id, placeholder_id),
-            )
-            migrated_rewards += cursor.rowcount or 0
+            reward_rows = connection.execute(
+                "SELECT id FROM user_rewards WHERE user_id = ? ORDER BY id",
+                (placeholder_id,),
+            ).fetchall()
+            for reward_row in reward_rows:
+                cursor = connection.execute(
+                    "UPDATE OR IGNORE user_rewards SET user_id = ? WHERE id = ?",
+                    (target_user_id, reward_row["id"]),
+                )
+                if cursor.rowcount:
+                    migrated_rewards += cursor.rowcount
+                else:
+                    connection.execute("DELETE FROM user_rewards WHERE id = ?", (reward_row["id"],))
         except sqlite3.DatabaseError as exc:
             logging.error(
                 "Gewinne von Platzhalter %s konnten nicht umgehängt werden: %s",
@@ -864,33 +1236,11 @@ def init_user_db():
             if not ensure_user_rewards_unique_constraint(connection):
                 logging.error("UNIQUE-Constraint auf user_rewards konnte nicht sichergestellt werden.")
 
-            connection.execute(
-                """
-                CREATE TABLE IF NOT EXISTS participant_entries (
-                    user_id TEXT NOT NULL,
-                    display_name TEXT NOT NULL,
-                    door INTEGER NOT NULL,
-                    created_at TEXT NOT NULL,
-                    PRIMARY KEY(user_id, door)
-                )
-                """
-            )
-            connection.execute(
-                """
-                CREATE TABLE IF NOT EXISTS winner_entries (
-                    user_id TEXT NOT NULL,
-                    display_name TEXT NOT NULL,
-                    door INTEGER NOT NULL,
-                    prize_name TEXT NOT NULL,
-                    sponsor TEXT,
-                    year INTEGER NOT NULL,
-                    created_at TEXT NOT NULL,
-                    PRIMARY KEY(user_id, door)
-                )
-                """
-            )
+            ensure_participant_entries_table(connection)
+            ensure_winner_entries_table(connection)
 
             if os.path.abspath(USER_DATABASE) == default_user_db:
+                import_participants_from_file(connection)
                 import_rewards_from_winners_file(connection)
             elif DEBUG:
                 logging.info(
@@ -1048,7 +1398,7 @@ def cleanup_user_qr_codes(rewards):
     if not rewards:
         return False
 
-    qr_directory = "qr_codes"
+    qr_directory = QR_CODE_DIR
     removed_any = False
 
     for reward in rewards:
@@ -1135,6 +1485,25 @@ def delete_user_and_release_rewards(user_id):
     return dict(row), rewards
 
 
+def reset_participants_storage():
+    with get_db_connection() as connection:
+        connection.execute("DELETE FROM participant_entries")
+    atomisch_schreiben(PARTICIPANTS_FILE, "")
+
+
+def reset_winners_storage():
+    with get_db_connection() as connection:
+        rewards_cursor = connection.execute(
+            "SELECT door, prize_name, sponsor, sponsor_link, qr_filename FROM user_rewards"
+        )
+        rewards = [dict(item) for item in rewards_cursor.fetchall()]
+        connection.execute("DELETE FROM user_rewards")
+        connection.execute("DELETE FROM winner_entries")
+    release_rewards_for_user(rewards)
+    atomisch_schreiben(WINNERS_FILE, "")
+    return rewards
+
+
 def create_user(email, display_name, password):
     email_normalised = normalise_email(email)
     if not email_normalised or not password:
@@ -1171,9 +1540,6 @@ def is_admin_user(user):
 
 # Initialisierung
 tuerchen_status = {tag: set() for tag in range(1, 25)}
-PRIZE_FILE = "preise.json"
-CALENDAR_STATUS_FILE = "kalender_status.json"
-DAILY_PRIZE_FILE = os.path.join(BASE_DIR, "tagespreise.json")
 gewinn_zeiten = [12, 13, 14, 15, 16, 17, 18, 19, 20, 21]
 tuerchen_farben = ["#FFCCCC", "#CCFFCC", "#CCCCFF", "#FFFFCC", "#CCFFFF", "#FFCCFF", "#FFCC99", "#99CCFF", "#FF9999", "#99FF99", "#9999FF", "#FF9966"] * 2
 
@@ -1190,8 +1556,10 @@ def load_calendar_status():
 
 def save_calendar_status(active):
     try:
-        with open(CALENDAR_STATUS_FILE, "w", encoding="utf-8") as file:
-            json.dump({"active": bool(active)}, file)
+        atomisch_schreiben(
+            CALENDAR_STATUS_FILE,
+            json.dumps({"active": bool(active)}, ensure_ascii=False) + "\n",
+        )
     except OSError as exc:
         logging.error("Kalenderstatus konnte nicht gespeichert werden: %s", exc)
 
@@ -1214,17 +1582,32 @@ def get_local_datetime():
     return utc_dt.astimezone(local_timezone)  # konvertiere in lokale Zeitzone
 
 
+def erzeuge_copyright_text():
+    aktuelles_jahr = get_local_datetime().year
+    if aktuelles_jahr > ERSTELLUNGSJAHR:
+        jahresangabe = f"{ERSTELLUNGSJAHR} - {aktuelles_jahr}"
+    else:
+        jahresangabe = str(ERSTELLUNGSJAHR)
+    return f"© {jahresangabe} Erik Schauer, do1ffe@darc.de"
+
+
 init_user_db()
 
 
-def record_user_reward(user_id, door, prize_name, sponsor=None, sponsor_link=None, qr_filename=None, qr_content=None):
+def record_user_reward(user_id, door, prize_name, sponsor=None, sponsor_link=None, qr_filename=None, qr_content=None, year=None):
     if not user_id or not prize_name:
         raise ValueError("Ungültige Daten für den Gewinnspeichereintrag.")
     created_at = get_local_datetime().isoformat()
     try:
         with get_db_connection() as connection:
             has_unique = ensure_user_rewards_unique_constraint(connection)
+            reward_columns = {
+                column["name"]
+                for column in connection.execute("PRAGMA table_info(user_rewards)").fetchall()
+            }
+            has_year_column = "year" in reward_columns
             user_id_int = int(user_id)
+            year_int = int(year if year is not None else get_local_datetime().year)
             door_int = int(door)
             prize_name_clean = str(prize_name).strip()
             sponsor_clean = str(sponsor or "").strip() or None
@@ -1232,13 +1615,13 @@ def record_user_reward(user_id, door, prize_name, sponsor=None, sponsor_link=Non
             qr_filename_clean = str(qr_filename or "").strip() or None
             qr_content_clean = str(qr_content or "").strip() or None
 
-            if has_unique:
+            if has_unique and has_year_column:
                 connection.execute(
                     """
                     INSERT INTO user_rewards (
-                        user_id, door, prize_name, sponsor, sponsor_link, qr_filename, qr_content, created_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                    ON CONFLICT(user_id, door) DO UPDATE SET
+                        user_id, year, door, prize_name, sponsor, sponsor_link, qr_filename, qr_content, created_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(user_id, year, door) DO UPDATE SET
                         prize_name=excluded.prize_name,
                         sponsor=excluded.sponsor,
                         sponsor_link=excluded.sponsor_link,
@@ -1248,6 +1631,40 @@ def record_user_reward(user_id, door, prize_name, sponsor=None, sponsor_link=Non
                     """,
                     (
                         user_id_int,
+                        year_int,
+                        door_int,
+                        prize_name_clean,
+                        sponsor_clean,
+                        sponsor_link_clean,
+                        qr_filename_clean,
+                        qr_content_clean,
+                        created_at,
+                    ),
+                )
+            elif has_year_column:
+                try:
+                    existing_id_row = connection.execute(
+                        """
+                        SELECT id FROM user_rewards
+                        WHERE user_id = ? AND year = ? AND door = ?
+                        ORDER BY id LIMIT 1
+                        """,
+                        (user_id_int, year_int, door_int),
+                    ).fetchone()
+                    existing_id = existing_id_row[0] if existing_id_row else None
+                except sqlite3.DatabaseError:
+                    existing_id = None
+
+                connection.execute(
+                    """
+                    INSERT OR REPLACE INTO user_rewards (
+                        id, user_id, year, door, prize_name, sponsor, sponsor_link, qr_filename, qr_content, created_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        existing_id,
+                        user_id_int,
+                        year_int,
                         door_int,
                         prize_name_clean,
                         sponsor_clean,
@@ -1295,19 +1712,25 @@ def record_user_reward(user_id, door, prize_name, sponsor=None, sponsor_link=Non
         return False
 
 
-def get_user_rewards(user_id):
+def get_user_rewards(user_id, year=None):
     if not user_id:
         return []
     try:
         with get_db_connection() as connection:
+            parameter = [int(user_id)]
+            jahr_filter = ""
+            if year is not None:
+                jahr_filter = "AND year = ?"
+                parameter.append(int(year))
             cursor = connection.execute(
-                """
-                SELECT door, prize_name, sponsor, sponsor_link, qr_filename, qr_content, created_at
+                f"""
+                SELECT year, door, prize_name, sponsor, sponsor_link, qr_filename, qr_content, created_at
                 FROM user_rewards
                 WHERE user_id = ?
+                {jahr_filter}
                 ORDER BY datetime(created_at) DESC, door DESC
                 """,
-                (int(user_id),),
+                parameter,
             )
             rows = cursor.fetchall()
     except sqlite3.DatabaseError as exc:
@@ -1331,6 +1754,7 @@ def get_user_rewards(user_id):
                 display_date = created_at_raw
         rewards.append({
             "door": row_data.get("door"),
+            "year": row_data.get("year"),
             "prize_name": row_data.get("prize_name"),
             "sponsor": row_data.get("sponsor"),
             "sponsor_link": row_data.get("sponsor_link"),
@@ -1343,8 +1767,10 @@ def get_user_rewards(user_id):
 
 
 def save_prizes(prizes):
-    with open(PRIZE_FILE, "w", encoding="utf-8") as file:
-        json.dump(prizes, file, indent=2, ensure_ascii=False)
+    atomisch_schreiben(
+        PRIZE_FILE,
+        json.dumps(prizes, indent=2, ensure_ascii=False) + "\n",
+    )
 
 
 def load_prizes():
@@ -1357,6 +1783,7 @@ def load_prizes():
                 name = str(entry.get("name", "")).strip()
                 sponsor = str(entry.get("sponsor", "") or "").strip()
                 sponsor_link = str(entry.get("sponsor_link", "") or "").strip()
+                hauptpreis = bool(entry.get("hauptpreis", False))
                 total = int(entry.get("total", entry.get("quantity", 0)))
                 total = max(total, 0)
                 remaining = int(entry.get("remaining", total))
@@ -1368,10 +1795,12 @@ def load_prizes():
                         "remaining": remaining,
                         "sponsor": sponsor,
                         "sponsor_link": sponsor_link,
+                        "hauptpreis": hauptpreis,
                     }
                     prizes.append(prize_entry)
             if prizes:
                 return prizes
+            logging.error("Preisedatei enthält keine gültigen Preise.")
         except (json.JSONDecodeError, ValueError, OSError, TypeError) as exc:
             logging.error("Fehler beim Laden der Preise: %s", exc)
     default_prizes = [
@@ -1381,9 +1810,11 @@ def load_prizes():
             "remaining": 15,
             "sponsor": "",
             "sponsor_link": "",
+            "hauptpreis": False,
         }
     ]
-    save_prizes(default_prizes)
+    if not os.path.exists(PRIZE_FILE):
+        save_prizes(default_prizes)
     return default_prizes
 
 
@@ -1421,8 +1852,10 @@ def load_daily_prize_counters():
 
 def save_daily_prize_counters(data):
     try:
-        with open(DAILY_PRIZE_FILE, "w", encoding="utf-8") as file:
-            json.dump(data, file, indent=2, ensure_ascii=False)
+        atomisch_schreiben(
+            DAILY_PRIZE_FILE,
+            json.dumps(data, indent=2, ensure_ascii=False) + "\n",
+        )
     except OSError as exc:
         logging.error("Fehler beim Speichern der Tagespreise: %s", exc)
 
@@ -1453,7 +1886,7 @@ def reduce_prize(prizes, current_day=None):
     for idx, prize in enumerate(prizes):
         if prize.get("remaining", 0) <= 0:
             continue
-        if idx == 0 and current_day not in (None, 24):
+        if prize.get("hauptpreis") and current_day not in (None, 24):
             continue
         available.append(prize)
     if not available:
@@ -1470,7 +1903,7 @@ def waehle_preis_ohne_persistenz(prizes, current_day=None):
     for index, preis in enumerate(prizes):
         if preis.get("remaining", 0) <= 0:
             continue
-        if index == 0 and current_day not in (None, 24):
+        if preis.get("hauptpreis") and current_day not in (None, 24):
             continue
         verfuegbare_preise.append((index, preis))
 
@@ -1506,11 +1939,18 @@ def format_prize_lines(prizes):
         sponsor = str(prize.get("sponsor", "") or "").strip()
         sponsor_link = str(prize.get("sponsor_link", "") or "").strip()
         name_segment = name
+        marker = "Hauptpreis" if prize.get("hauptpreis") else ""
         if sponsor:
             sponsor_segment = sponsor
             if sponsor_link:
                 sponsor_segment = f"{sponsor} ({sponsor_link})"
-            name_segment = f"{name} | {sponsor_segment}"
+            teile = [name]
+            if marker:
+                teile.append(marker)
+            teile.append(sponsor_segment)
+            name_segment = " | ".join(teile)
+        elif marker:
+            name_segment = f"{name} | {marker}"
         if remaining != total:
             lines.append(f"{name_segment}={total}/{remaining}")
         else:
@@ -1572,8 +2012,20 @@ def parse_prize_configuration(prize_data):
         sponsor = ""
         sponsor_link = ""
         if "|" in name_part:
-            name_part, sponsor_part = map(str.strip, name_part.split("|", 1))
-            sponsor, sponsor_link = extract_sponsor_details(sponsor_part)
+            segmente = [segment.strip() for segment in name_part.split("|")]
+            name_part = segmente[0]
+            zusatzsegmente = segmente[1:]
+        else:
+            zusatzsegmente = []
+        hauptpreis = False
+        sponsor_parts = []
+        for segment in zusatzsegmente:
+            if segment.casefold() == "hauptpreis":
+                hauptpreis = True
+            elif segment:
+                sponsor_parts.append(segment)
+        if sponsor_parts:
+            sponsor, sponsor_link = extract_sponsor_details(" | ".join(sponsor_parts))
         name = name_part
         if not name:
             raise ValueError(f"Zeile {idx}: Preisname fehlt.")
@@ -1596,15 +2048,17 @@ def parse_prize_configuration(prize_data):
             "remaining": remaining,
             "sponsor": sponsor,
             "sponsor_link": sponsor_link,
+            "hauptpreis": hauptpreis,
         }
         prizes.append(prize_entry)
     if not prizes:
         raise ValueError("Es muss mindestens ein Preis mit positiver Anzahl angegeben werden.")
     return prizes
 
-def hat_gewonnen(user_identifier):
+def hat_gewonnen(user_identifier, jahr=None):
     """Überprüft, ob der Benutzer bereits gewonnen hat."""
     user_identifier = str(user_identifier)
+    jahr = int(jahr if jahr is not None else get_local_datetime().year)
     user_identifier_int = None
     try:
         user_identifier_int = int(user_identifier)
@@ -1617,15 +2071,15 @@ def hat_gewonnen(user_identifier):
     try:
         with get_db_connection() as connection:
             cursor = connection.execute(
-                "SELECT 1 FROM user_rewards WHERE user_id = ? LIMIT 1",
-                (user_identifier,),
+                "SELECT 1 FROM user_rewards WHERE user_id = ? AND year = ? LIMIT 1",
+                (user_identifier, jahr),
             )
             if cursor.fetchone():
                 return True
             try:
                 cursor = connection.execute(
-                    "SELECT 1 FROM winner_entries WHERE user_id = ? LIMIT 1",
-                    (user_identifier,),
+                    "SELECT 1 FROM winner_entries WHERE user_id = ? AND year = ? LIMIT 1",
+                    (user_identifier, jahr),
                 )
                 if cursor.fetchone():
                     return True
@@ -1653,16 +2107,22 @@ def hat_gewonnen(user_identifier):
         if not line:
             continue
 
+        parsed_entry = parse_winner_entry(line)
         prefix = line.split(" ", 1)[0]
         prefix_id = prefix.split(":", 1)[0]
-        if prefix_id == user_identifier:
+        mapped_user_id = None
+
+        if parsed_entry:
+            parsed_year = parsed_entry.get("year")
+            if parsed_year and int(parsed_year) != jahr:
+                continue
+            if prefix_id == user_identifier:
+                return True
+        elif prefix_id == user_identifier:
             return True
 
         if user_identifier_int is None:
             continue
-
-        parsed_entry = parse_winner_entry(line)
-        mapped_user_id = None
 
         if parsed_entry:
             mapped_user_id = resolve_user_id_from_identity(
@@ -1704,14 +2164,15 @@ def gewinnchance_ermitteln(user_identifier, heutiges_datum, verbleibende_preise)
     gewinnchance = verbleibende_preise / verbleibende_tage
 
     # Reduzierte Gewinnchance für Benutzer, die bereits gewonnen haben
-    if hat_gewonnen(user_identifier):
+    if hat_gewonnen(user_identifier, heutiges_datum.year):
         return gewinnchance * 0.1  # Beispiel: 10% der normalen Gewinnchance
 
     return gewinnchance
 
 
-def hat_teilgenommen(user_identifier, tag):
+def hat_teilgenommen(user_identifier, tag, jahr=None):
     user_identifier = str(user_identifier)
+    jahr = int(jahr if jahr is not None else get_local_datetime().year)
     try:
         tag_int = int(tag)
     except (TypeError, ValueError):
@@ -1719,8 +2180,8 @@ def hat_teilgenommen(user_identifier, tag):
     try:
         with get_db_connection() as connection:
             cursor = connection.execute(
-                "SELECT 1 FROM participant_entries WHERE user_id = ? AND door = ? LIMIT 1",
-                (user_identifier, tag_int),
+                "SELECT 1 FROM participant_entries WHERE user_id = ? AND year = ? AND door = ? LIMIT 1",
+                (user_identifier, jahr, tag_int),
             )
             if cursor.fetchone():
                 return True
@@ -1736,24 +2197,22 @@ def hat_teilgenommen(user_identifier, tag):
         logging.error("Legacy-Teilnehmerdatei konnte nicht gelesen werden: %s", exc)
         return False
 
+    legacy_year = ermittle_legacy_datenjahr()
     for line in lines:
         cleaned = line.strip()
         if not cleaned:
             continue
-        try:
-            user_part, tag_part = cleaned.rsplit("-", 1)
-        except ValueError:
-            continue
-        user_key = user_part.split(":", 1)[0]
-        if user_key == user_identifier and tag_part == str(tag):
+        parsed = parse_participant_entry(cleaned, fallback_year=legacy_year)
+        if parsed and parsed["user_id"] == user_identifier and parsed["door"] == tag_int and parsed["year"] == jahr:
             return True
     return False
 
 
-def speichere_teilnehmer(user_identifier, display_name, tag):
+def speichere_teilnehmer(user_identifier, display_name, tag, jahr=None):
     user_identifier = str(user_identifier)
     display_name = str(display_name or "").strip() or "Unbekannt"
     tag_int = int(tag)
+    jahr_int = int(jahr if jahr is not None else get_local_datetime().year)
     created_at = get_local_datetime().isoformat()
     if DEBUG:
         logging.debug(
@@ -1764,19 +2223,32 @@ def speichere_teilnehmer(user_identifier, display_name, tag):
         )
     try:
         with get_db_connection() as connection:
-            connection.execute(
+            cursor = connection.execute(
                 """
-                INSERT INTO participant_entries (user_id, display_name, door, created_at)
-                VALUES (?, ?, ?, ?)
-                ON CONFLICT(user_id, door) DO UPDATE SET
-                    display_name=excluded.display_name,
-                    created_at=excluded.created_at
+                INSERT INTO participant_entries (user_id, display_name, year, door, created_at)
+                VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(user_id, year, door) DO NOTHING
                 """,
-                (user_identifier, display_name, tag_int, created_at),
+                (user_identifier, display_name, jahr_int, tag_int, created_at),
             )
+            return bool(cursor.rowcount)
     except sqlite3.DatabaseError as exc:
         logging.error("Teilnehmer konnte nicht gespeichert werden: %s", exc)
         raise
+
+
+def loesche_teilnahme(user_identifier, tag, jahr=None):
+    user_identifier = str(user_identifier)
+    jahr_int = int(jahr if jahr is not None else get_local_datetime().year)
+    tag_int = int(tag)
+    try:
+        with get_db_connection() as connection:
+            connection.execute(
+                "DELETE FROM participant_entries WHERE user_id = ? AND year = ? AND door = ?",
+                (user_identifier, jahr_int, tag_int),
+            )
+    except sqlite3.DatabaseError as exc:
+        logging.error("Teilnahme konnte nicht zurückgerollt werden: %s", exc)
 
 
 def speichere_gewinner(user_identifier, display_name, tag, preis, jahr=None, sponsor=None):
@@ -1800,20 +2272,45 @@ def speichere_gewinner(user_identifier, display_name, tag, preis, jahr=None, spo
         with get_db_connection() as connection:
             connection.execute(
                 """
-                INSERT INTO winner_entries (user_id, display_name, door, prize_name, sponsor, year, created_at)
+                INSERT INTO winner_entries (user_id, display_name, year, door, prize_name, sponsor, created_at)
                 VALUES (?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(user_id, door) DO UPDATE SET
+                ON CONFLICT(user_id, year, door) DO UPDATE SET
                     display_name=excluded.display_name,
                     prize_name=excluded.prize_name,
                     sponsor=excluded.sponsor,
-                    year=excluded.year,
                     created_at=excluded.created_at
                 """,
-                (user_identifier, display_name, tag_int, preis_text, sponsor_text, int(jahr), created_at),
+                (user_identifier, display_name, int(jahr), tag_int, preis_text, sponsor_text, created_at),
             )
     except sqlite3.DatabaseError as exc:
         logging.error("Gewinner konnte nicht gespeichert werden: %s", exc)
         raise
+
+
+def loesche_gewinn_fuer_tuer(user_identifier, tag, jahr=None):
+    user_identifier = str(user_identifier)
+    jahr_int = int(jahr if jahr is not None else get_local_datetime().year)
+    tag_int = int(tag)
+    try:
+        with get_db_connection() as connection:
+            connection.execute(
+                "DELETE FROM user_rewards WHERE user_id = ? AND year = ? AND door = ?",
+                (int(user_identifier), jahr_int, tag_int),
+            )
+            connection.execute(
+                "DELETE FROM winner_entries WHERE user_id = ? AND year = ? AND door = ?",
+                (user_identifier, jahr_int, tag_int),
+            )
+    except (sqlite3.DatabaseError, ValueError) as exc:
+        logging.error("Gewinn konnte nicht zurückgerollt werden: %s", exc)
+
+
+def entferne_qr_code(qr_pfad):
+    try:
+        if qr_pfad and os.path.exists(qr_pfad):
+            os.remove(qr_pfad)
+    except OSError as exc:
+        logging.error("QR-Code %s konnte nicht entfernt werden: %s", qr_pfad, exc)
 
 
 def process_win_for_user(user_id, display_name, tag, heute, prizes):
@@ -1825,7 +2322,7 @@ def process_win_for_user(user_id, display_name, tag, heute, prizes):
     preis_index, gewonnener_preis = waehle_preis_ohne_persistenz(prizes, heute.day)
     if gewonnener_preis is None or not gewonnener_preis.get("name"):
         hinweis = "Alle Preise wurden bereits vergeben."
-        if tag != 24 and prizes and prizes[0].get("remaining", 0) > 0:
+        if tag != 24 and any(preis.get("hauptpreis") and preis.get("remaining", 0) > 0 for preis in prizes):
             hinweis = (
                 "Alle heutigen Preise wurden bereits vergeben. "
                 "Der Hauptpreis wird erst am 24. Dezember verlost."
@@ -1837,8 +2334,8 @@ def process_win_for_user(user_id, display_name, tag, heute, prizes):
     sponsor_name = str(gewonnener_preis.get("sponsor", "") or "").strip()
     sponsor_link = str(gewonnener_preis.get("sponsor_link", "") or "").strip()
     qr_content = f"{tag}-{display_name}-{user_id}-{preis_name}-OV L11-{aktuelles_jahr}"
-    qr_filename = f"user_{user_id}_{tag}.png"
-    qr_pfad = os.path.join("qr_codes", qr_filename)
+    qr_filename = f"user_{user_id}_{aktuelles_jahr}_{tag}.png"
+    qr_pfad = os.path.join(QR_CODE_DIR, qr_filename)
 
     try:
         qr = qrcode.QRCode(
@@ -1850,7 +2347,7 @@ def process_win_for_user(user_id, display_name, tag, heute, prizes):
         qr.add_data(qr_content)
         qr.make(fit=True)
         img = qr.make_image(fill_color="black", back_color="white")
-        os.makedirs("qr_codes", exist_ok=True)
+        os.makedirs(QR_CODE_DIR, exist_ok=True)
         img.save(qr_pfad)
     except Exception as exc:
         logging.error("QR-Code konnte nicht erstellt werden: %s", exc)
@@ -1865,6 +2362,7 @@ def process_win_for_user(user_id, display_name, tag, heute, prizes):
             sponsor_link=sponsor_link,
             qr_filename=qr_filename,
             qr_content=qr_content,
+            year=aktuelles_jahr,
         )
     except ValueError as exc:
         logging.error("Ungültige Gewinninformationen: %s", exc)
@@ -1874,15 +2372,13 @@ def process_win_for_user(user_id, display_name, tag, heute, prizes):
         reward_recorded = False
 
     if not reward_recorded:
-        try:
-            if os.path.exists(qr_pfad):
-                os.remove(qr_pfad)
-        except OSError as exc:
-            logging.error("QR-Code %s konnte nicht entfernt werden: %s", qr_pfad, exc)
+        entferne_qr_code(qr_pfad)
         return {"success": False, "status_code": 500, "message": error_message}
 
     if not persistiere_preisreduzierung(prizes, preis_index):
         logging.error("Preisbestand konnte für Benutzer %s nicht aktualisiert werden.", user_id)
+        loesche_gewinn_fuer_tuer(user_id, tag, aktuelles_jahr)
+        entferne_qr_code(qr_pfad)
         return {"success": False, "status_code": 500, "message": error_message}
 
     try:
@@ -1899,6 +2395,8 @@ def process_win_for_user(user_id, display_name, tag, heute, prizes):
         logging.error("Gewinnerdaten konnten nicht vollständig gespeichert werden: %s", exc)
         prizes[preis_index]["remaining"] += 1
         save_prizes(prizes)
+        loesche_gewinn_fuer_tuer(user_id, tag, aktuelles_jahr)
+        entferne_qr_code(qr_pfad)
         return {"success": False, "status_code": 500, "message": error_message}
 
     return {
@@ -2108,7 +2606,7 @@ def startseite():
     tuerchen_status.update({tag: set() for tag in range(1, 25)})
     if is_logged_in:
         for tag in range(1, 25):
-            if hat_teilgenommen(user_id, tag):
+            if hat_teilgenommen(user_id, tag, heute.year):
                 tuerchen_status[tag].add(str(user_id))
 
     # Zufällige Reihenfolge der Türchen bei jedem Aufruf
@@ -2118,6 +2616,7 @@ def startseite():
         "username": username,
         "tuerchen": tuerchen_reihenfolge,
         "heute": heute,
+        "aktueller_tuerchen_tag": heute.day if heute.month == 12 and 1 <= heute.day <= 24 else None,
         "tuerchen_status": tuerchen_status,
         "tuerchen_farben": tuerchen_farben,
         "verbleibende_preise": verbleibende_preise,
@@ -2133,7 +2632,7 @@ def startseite():
         "register_url": url_for('register'),
         "is_admin": is_admin_user(user) if user else False,
         "admin_url": url_for('admin_page') if is_logged_in and is_admin_user(user) else None,
-        "user_rewards": get_user_rewards(user_id) if is_logged_in else [],
+        "user_rewards": get_user_rewards(user_id, heute.year) if is_logged_in else [],
         "is_logged_in": is_logged_in,
     }
 
@@ -2170,13 +2669,21 @@ def oeffne_tuerchen(tag):
             heute,
         )
 
-    if heute.month == 12 and heute.day == tag:
-        if hat_teilgenommen(user_id, tag):
+    if not (heute.month == 12 and heute.day == tag):
+        if DEBUG: logging.debug(f"Türchen {tag} kann heute noch nicht geöffnet werden")
+        return make_response(render_template_string(GENERIC_PAGE, content="Dieses Türchen kann heute noch nicht geöffnet werden."))
+
+    with exklusiver_app_lock():
+        if hat_teilgenommen(user_id, tag, heute.year):
             if DEBUG:
                 logging.debug("Benutzer %s hat Türchen %s bereits geöffnet", user_id, tag)
             return make_response(render_template_string(GENERIC_PAGE, content="Du hast dieses Türchen heute bereits geöffnet!"))
 
-        speichere_teilnehmer(user_id, display_name, tag)
+        teilnahme_gespeichert = speichere_teilnehmer(user_id, display_name, tag, heute.year)
+        if teilnahme_gespeichert is False:
+            if DEBUG:
+                logging.debug("Benutzer %s hat Türchen %s parallel bereits geöffnet", user_id, tag)
+            return make_response(render_template_string(GENERIC_PAGE, content="Du hast dieses Türchen heute bereits geöffnet!"))
         tuerchen_status[tag].add(str(user_id))
         heutige_gewinner = get_daily_awarded_prizes(heute)
 
@@ -2216,6 +2723,8 @@ def oeffne_tuerchen(tag):
         ):
             result = process_win_for_user(user_id, display_name, tag, heute, prizes)
             if not result.get("success"):
+                loesche_teilnahme(user_id, tag, heute.year)
+                tuerchen_status[tag].discard(str(user_id))
                 return make_response(
                     render_template_string(GENERIC_PAGE, content=result.get("message", "")),
                     result.get("status_code", 500),
@@ -2245,18 +2754,15 @@ def oeffne_tuerchen(tag):
                 f"oder sieh ihn dir <a href='/qr_codes/{qr_filename_escaped}'>hier an</a>."
             )
             return make_response(render_template_string(GENERIC_PAGE, content=content))
-        else:
-            if DEBUG:
-                logging.debug("Kein Gewinn für Benutzer %s am Tag %s", user_id, tag)
-            return make_response(
-                render_template_string(
-                    GENERIC_PAGE,
-                    content=f"Du hattest heute leider kein Glück, {safe_display_name}. Versuche es morgen noch einmal!",
-                )
+
+        if DEBUG:
+            logging.debug("Kein Gewinn für Benutzer %s am Tag %s", user_id, tag)
+        return make_response(
+            render_template_string(
+                GENERIC_PAGE,
+                content=f"Du hattest heute leider kein Glück, {safe_display_name}. Versuche es morgen noch einmal!",
             )
-    else:
-        if DEBUG: logging.debug(f"Türchen {tag} kann heute noch nicht geöffnet werden")
-        return make_response(render_template_string(GENERIC_PAGE, content="Dieses Türchen kann heute noch nicht geöffnet werden."))
+        )
 
 @app.route('/download_qr/<filename>', methods=['GET'])
 def download_qr(filename):
@@ -2288,7 +2794,7 @@ def download_qr(filename):
                     ),
                     403,
                 )
-    return send_from_directory('qr_codes', filename, as_attachment=True)
+    return send_from_directory(QR_CODE_DIR, filename, as_attachment=True)
 
 @app.route('/qr_codes/<filename>')
 def qr_code(filename):
@@ -2319,12 +2825,12 @@ def qr_code(filename):
                     ),
                     403,
                 )
-    return send_from_directory('qr_codes', filename)
+    return send_from_directory(QR_CODE_DIR, filename)
 
 # Route für das Ausliefern von Event-Graphen hinzufügen
 @app.route('/event_graphen/<filename>')
 def event_graph(filename):
-    return send_from_directory('event_graphen', filename)
+    return send_from_directory(EVENT_GRAPH_DIR, filename)
 
 # HTML-Templates mit Header und Footer
 HOME_PAGE = '''
@@ -3420,7 +3926,7 @@ HOME_PAGE = '''
       </div>
       {% endif %}
       <h1>Adventskalender des OV L11</h1>
-      <p>Stell jeden Tag ein neues Türchen frei, genieße die winterliche Vorfreude und sichere dir mit etwas Glück {% if prize_phrase %}einen unserer festlichen Preise wie {{ prize_phrase }}{% else %}einen festlichen Preis{% endif %} in unserer festlich geschmückten Clubstation! Die Preisvergabe findet am ersten OV-Abend am 13.01.2026 um 19 Uhr statt.</p>
+      <p>Stell jeden Tag ein neues Türchen frei, genieße die winterliche Vorfreude und sichere dir mit etwas Glück {% if prize_phrase %}einen unserer festlichen Preise wie {{ prize_phrase }}{% else %}einen festlichen Preis{% endif %} in unserer festlich geschmückten Clubstation! Die Preisvergabe findet am ersten OV-Abend nach dem Advent statt.</p>
       {% if sponsors %}
       <section class="sponsor-highlight">
         <h2>Unsere Sponsoren</h2>
@@ -3550,8 +4056,11 @@ HOME_PAGE = '''
         </div>
         <div class="tuerchen-container">
           {% for num in tuerchen %}
-            <a href="{% if is_logged_in and calendar_active and not tuerchen_status[num] and num >= heute.day %}/oeffne_tuerchen/{{ num }}{% elif not is_logged_in %}{{ login_url }}{% else %}#{% endif %}"
-               class="tuerchen{% if not is_logged_in or not calendar_active or tuerchen_status[num] or num < heute.day %} disabled{% endif %}{% if num == heute.day %} current-day{% endif %}"
+            {% set ist_heutiges_tuerchen = aktueller_tuerchen_tag and num == aktueller_tuerchen_tag %}
+            {% set darf_oeffnen = is_logged_in and calendar_active and ist_heutiges_tuerchen and not tuerchen_status[num] %}
+            {% set darf_zum_login = (not is_logged_in) and calendar_active and ist_heutiges_tuerchen %}
+            <a href="{% if darf_oeffnen %}/oeffne_tuerchen/{{ num }}{% elif darf_zum_login %}{{ login_url }}{% else %}#{% endif %}"
+               class="tuerchen{% if not darf_oeffnen and not darf_zum_login %} disabled{% endif %}{% if ist_heutiges_tuerchen %} current-day{% endif %}"
                style="--door-color: {{ tuerchen_farben[num-1] }};">
               <span class="door-number">{{ "%02d"|format(num) }}</span>
             </a>
@@ -3581,7 +4090,7 @@ HOME_PAGE = '''
     <div class="snow-ground" aria-hidden="true"></div>
     <footer>
       <div class="footer-inner">
-        <p>&copy; 2023 - 2025 Erik Schauer, DO1FFE, do1ffe@darc.de</p>
+        <p>{{ copyright_text() }}</p>
       </div>
     </footer>
     <script>
@@ -4267,7 +4776,7 @@ LOGIN_PAGE = '''
         display: flex;
         align-items: center;
         justify-content: center;
-        padding: 30px 15px;
+        padding: 30px 15px 90px;
       }
       .auth-card {
         width: min(100%, 420px);
@@ -4342,6 +4851,18 @@ LOGIN_PAGE = '''
       a:hover {
         text-decoration: underline;
       }
+      footer {
+        position: fixed;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        padding: 18px;
+        background: #0f2e48;
+        color: #ffeecf;
+        text-align: center;
+        border-top: 2px solid rgba(255, 255, 255, 0.2);
+        box-shadow: 0 -4px 15px rgba(0, 0, 0, 0.25);
+      }
     </style>
   </head>
   <body>
@@ -4369,6 +4890,7 @@ LOGIN_PAGE = '''
         Noch kein Konto? <a href="/register">Jetzt registrieren</a>
       </div>
     </div>
+    <footer>{{ copyright_text() }}</footer>
   </body>
 </html>
 '''
@@ -4392,7 +4914,7 @@ REGISTER_PAGE = '''
         display: flex;
         align-items: center;
         justify-content: center;
-        padding: 30px 15px;
+        padding: 30px 15px 90px;
       }
       .auth-card {
         width: min(100%, 460px);
@@ -4460,6 +4982,18 @@ REGISTER_PAGE = '''
       a:hover {
         text-decoration: underline;
       }
+      footer {
+        position: fixed;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        padding: 18px;
+        background: #0f2e48;
+        color: #ffeecf;
+        text-align: center;
+        border-top: 2px solid rgba(255, 255, 255, 0.2);
+        box-shadow: 0 -4px 15px rgba(0, 0, 0, 0.25);
+      }
     </style>
   </head>
   <body>
@@ -4492,6 +5026,7 @@ REGISTER_PAGE = '''
         Bereits registriert? <a href="/login">Zur Anmeldung</a>
       </div>
     </div>
+    <footer>{{ copyright_text() }}</footer>
   </body>
 </html>
 '''
@@ -4671,7 +5206,7 @@ GENERIC_PAGE = '''
     <div class="snow-ground" aria-hidden="true"></div>
     <footer>
       <div class="footer-inner">
-        <p>&copy; 2023 - 2025 Erik Schauer, DO1FFE, do1ffe@darc.de</p>
+        <p>{{ copyright_text() }}</p>
       </div>
     </footer>
     <script>
@@ -4958,27 +5493,31 @@ def admin_page():
                     prizes = load_prizes()
         elif action == 'reset_teilnehmer':
             try:
-                with open('teilnehmer.txt', 'w', encoding='utf-8'):
-                    pass
+                reset_participants_storage()
                 message = "Teilnehmerliste wurde geleert."
             except OSError as exc:
                 is_error = True
                 message = f"Teilnehmerdatei konnte nicht geleert werden: {exc}"
+            except sqlite3.DatabaseError as exc:
+                is_error = True
+                message = f"Teilnehmerdatenbank konnte nicht geleert werden: {exc}"
 
         elif action == 'reset_gewinner':
             try:
-                with open(WINNERS_FILE, 'w', encoding='utf-8'):
-                    pass
-                message = "Gewinnerliste wurde geleert."
+                rewards = reset_winners_storage()
+                message = f"Gewinnerliste wurde geleert. {len(rewards)} Gewinn(e) wurden freigegeben."
             except OSError as exc:
                 is_error = True
                 message = f"Gewinnerdatei konnte nicht geleert werden: {exc}"
+            except sqlite3.DatabaseError as exc:
+                is_error = True
+                message = f"Gewinnerdatenbank konnte nicht geleert werden: {exc}"
 
         elif action == 'reset_qr_codes':
             try:
-                if os.path.exists('qr_codes'):
-                    for filename in os.listdir('qr_codes'):
-                        path = os.path.join('qr_codes', filename)
+                if os.path.exists(QR_CODE_DIR):
+                    for filename in os.listdir(QR_CODE_DIR):
+                        path = os.path.join(QR_CODE_DIR, filename)
                         if os.path.isfile(path) or os.path.islink(path):
                             os.remove(path)
                         elif os.path.isdir(path):
@@ -5006,10 +5545,10 @@ def admin_page():
     registered_users = get_all_users()
 
     qr_files = []
-    if os.path.exists('qr_codes'):
-        qr_files = sorted(os.listdir('qr_codes'))
+    if os.path.exists(QR_CODE_DIR):
+        qr_files = sorted(os.listdir(QR_CODE_DIR))
 
-    teilnehmer_inhalt = lese_datei('teilnehmer.txt', 'Keine Teilnehmerdaten vorhanden.')
+    teilnehmer_inhalt = lese_datei(PARTICIPANTS_FILE, 'Keine Teilnehmerdaten vorhanden.')
     gewinner_inhalt = lese_datei(WINNERS_FILE, 'Keine Gewinnerdaten vorhanden.')
 
     return render_template_string(
@@ -5312,7 +5851,7 @@ ADMIN_PAGE = '''
 
       <section class="panel">
         <h2>Preise verwalten</h2>
-        <p>Eintrag pro Zeile im Format <code>Name | Sponsor=Gesamt</code> oder <code>Name | Sponsor=Gesamt/Verfügbar</code>. Optional kann ein Link mit <code>Name | Sponsor (https://link)=...</code> angegeben werden. Der Sponsor ist optional; Zeilen mit Anzahl 0 werden ignoriert.</p>
+        <p>Eintrag pro Zeile im Format <code>Name | Sponsor=Gesamt</code> oder <code>Name | Sponsor=Gesamt/Verfügbar</code>. Ein Hauptpreis wird mit <code>Name | Hauptpreis | Sponsor=Gesamt</code> markiert und erst am 24. Dezember verlost.</p>
         <form method="post">
           <input type="hidden" name="action" value="update_prizes">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -5324,6 +5863,9 @@ ADMIN_PAGE = '''
           {% for prize in prizes %}
             <li>
               <strong>{{ prize.name }}</strong>
+              {% if prize.get('hauptpreis') %}
+                <em>(Hauptpreis am 24. Dezember)</em>
+              {% endif %}
               {% if prize.get('sponsor') %}
                 <em>(Sponsor:
                   {% if prize.get('sponsor_link') %}
@@ -5459,7 +6001,7 @@ ADMIN_PAGE = '''
       </section>
 
     <footer>
-      <div class="footer-inner">&copy; 2023 - 2025 Erik Schauer, DO1FFE, do1ffe@darc.de</div>
+      <div class="footer-inner">{{ copyright_text() }}</div>
     </footer>
     </main>
   </body>
@@ -5475,8 +6017,8 @@ if __name__ == '__main__':
         )
         sys.exit(0)
 
-    if not os.path.exists('qr_codes'):
-        os.makedirs('qr_codes')
+    if not os.path.exists(QR_CODE_DIR):
+        os.makedirs(QR_CODE_DIR)
 
     load_prizes()
 

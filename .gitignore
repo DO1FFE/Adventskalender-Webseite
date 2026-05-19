@@ -2,3 +2,5 @@ users.db
 *.pyc
 __pycache__/
 debug.log
+advent.lock
+*.lock
